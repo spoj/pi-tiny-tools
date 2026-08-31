@@ -1,11 +1,11 @@
 # pi-tiny-tools
 
-A small [Pi](https://github.com/earendil-works/pi-mono) extension that replaces boxed tool output and extension messages with one-line trace rows.
+A small [Pi](https://github.com/earendil-works/pi-mono) extension that replaces boxed tool output and extension messages with compact one-line rows.
 
 ```text
-  ▏ › read src/index.ts:1-120                         4.2k ch
-  ▏ › $ npm test                                      1.8k ch
-  ▏ › [pi-subagents] Subagent completed · Result: done  0.2k ch
+  › read src/index.ts:1-120                         4.2k ch
+  › $ npm test                                      1.8k ch
+  › [pi-subagents] Subagent completed · Result: done  0.2k ch
 ```
 
 Press `Ctrl+O` to switch between the compact rows and Pi's complete native rendering. Normal user and assistant messages are not changed.

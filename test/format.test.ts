@@ -36,6 +36,7 @@ test("tool rows are compact, width safe, and preserve their useful tail", () => 
   };
   const lines = renderToolRow(row, 40);
   assert.equal(lines.length, 1);
+  assert.ok(!lines[0].includes("▏"));
   assert.ok(lines[0].includes("1.2k ch"));
   assert.ok(lines[0].includes("file.ts"));
   assert.ok(visibleWidth(lines[0]) <= 40);

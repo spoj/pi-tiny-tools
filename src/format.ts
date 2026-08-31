@@ -23,7 +23,7 @@ export type CustomRow = {
 };
 
 const CAPTURE_WIDTH = 10_000;
-const PREFIX_WIDTH = 6;
+const PREFIX_WIDTH = 4;
 
 export function stripAnsi(text: string): string {
   return text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g, "");
@@ -118,9 +118,8 @@ function fitRow(prefix: string, body: string, suffix: string, width: number, pre
 }
 
 function prefix(theme: Theme | undefined, tone: "running" | "success" | "error"): string {
-  const rail = theme?.fg("dim", "▏") ?? "▏";
   const bullet = theme?.fg(tone === "running" ? "accent" : tone, "›") ?? "›";
-  return `  ${rail} ${bullet} `;
+  return `  ${bullet} `;
 }
 
 export function renderToolRow(row: ToolRow, width: number, theme?: Theme): string[] {
