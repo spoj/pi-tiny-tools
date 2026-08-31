@@ -10,6 +10,8 @@ type Render = (this: unknown, width: number) => string[];
 type PatchedPrototype = {
   render: Render;
   __piTinyToolsOriginalRender?: Render;
+  __piTinyToolsRender?: Render;
+  __piTinyToolsHadOwnRender?: boolean;
   __piTinyToolsPatch?: "tool" | "custom";
 };
 
@@ -26,25 +28,33 @@ function patch(
 ): void {
   if (prototype.__piTinyToolsPatch === kind) return;
   const original = prototype.__piTinyToolsOriginalRender ?? prototype.render;
-  prototype.__piTinyToolsOriginalRender = original;
-  prototype.render = function (width) {
-    const expanded = kind === "tool"
-      ? (this as { expanded?: unknown }).expanded
-      : (this as { _expanded?: unknown })._expanded;
-    if (expanded === true) return original.call(this, width);
+  const wrapper: Render = function (width) {
+    const row = this as { expanded?: unknown; _expanded?: unknown; hideComponent?: unknown };
+    const expanded = kind === "tool" ? row.expanded : row._expanded;
+    if (expanded === true || (kind === "tool" && row.hideComponent === true)) {
+      return original.call(this, width);
+    }
     try {
       return compact(this, width, globals.__piTinyToolsTheme?.());
     } catch {
       return original.call(this, width);
     }
   };
+  prototype.__piTinyToolsOriginalRender = original;
+  prototype.__piTinyToolsHadOwnRender = Object.hasOwn(prototype, "render");
+  prototype.__piTinyToolsRender = wrapper;
+  prototype.render = wrapper;
   prototype.__piTinyToolsPatch = kind;
 }
 
 function restore(prototype: PatchedPrototype, kind: "tool" | "custom"): void {
-  if (prototype.__piTinyToolsPatch !== kind || !prototype.__piTinyToolsOriginalRender) return;
-  prototype.render = prototype.__piTinyToolsOriginalRender;
+  const original = prototype.__piTinyToolsOriginalRender;
+  if (prototype.__piTinyToolsPatch !== kind || !original || prototype.render !== prototype.__piTinyToolsRender) return;
+  if (prototype.__piTinyToolsHadOwnRender) prototype.render = original;
+  else delete (prototype as Partial<PatchedPrototype>).render;
   delete prototype.__piTinyToolsOriginalRender;
+  delete prototype.__piTinyToolsRender;
+  delete prototype.__piTinyToolsHadOwnRender;
   delete prototype.__piTinyToolsPatch;
 }
 

@@ -71,6 +71,13 @@ export function resultChars(row: ToolRow): number | undefined {
   return textContent(row.result.content).length;
 }
 
+function imageType(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return;
+  const image = content.find((block) => block?.type === "image") as ContentBlock | undefined;
+  if (!image) return;
+  return typeof image.mimeType === "string" ? image.mimeType.replace(/^image\//, "") : "image";
+}
+
 function compactCount(value: number): string {
   if (value < 1_000) return String(value);
   if (value < 10_000) return `${(value / 1_000).toFixed(1)}k`;
@@ -78,12 +85,32 @@ function compactCount(value: number): string {
   return `${(value / 1_000_000).toFixed(1)}m`;
 }
 
-function fitRow(prefix: string, body: string, suffix: string, width: number): string {
+function middleTruncate(text: string, width: number): string {
+  if (visibleWidth(text) <= width) return text;
+  if (width <= 1) return "…";
+  const chars = Array.from(text);
+  const leftBudget = Math.ceil((width - 1) / 2);
+  const rightBudget = Math.floor((width - 1) / 2);
+  let left = "";
+  let right = "";
+  for (const char of chars) {
+    if (visibleWidth(left + char) > leftBudget) break;
+    left += char;
+  }
+  for (let index = chars.length - 1; index >= 0; index--) {
+    if (visibleWidth(chars[index] + right) > rightBudget) break;
+    right = chars[index] + right;
+  }
+  return `${left}…${right}`;
+}
+
+function fitRow(prefix: string, body: string, suffix: string, width: number, preserveTail = false): string {
   const safeWidth = Math.max(1, width);
   const suffixWidth = visibleWidth(suffix);
   const gap = suffix ? 2 : 0;
   const bodyWidth = Math.max(1, safeWidth - PREFIX_WIDTH - suffixWidth - gap - 2);
-  const left = `${prefix}${truncateToWidth(body, bodyWidth, "…")}`;
+  const fittedBody = preserveTail ? middleTruncate(body, bodyWidth) : truncateToWidth(body, bodyWidth, "…");
+  const left = `${prefix}${fittedBody}`;
   if (!suffix || visibleWidth(left) + gap + suffixWidth > safeWidth) {
     return truncateToWidth(left, safeWidth, "…");
   }
@@ -99,8 +126,14 @@ function prefix(theme: Theme | undefined, tone: "running" | "success" | "error")
 export function renderToolRow(row: ToolRow, width: number, theme?: Theme): string[] {
   const tone = row.result?.isError ? "error" : row.result && row.isPartial !== true ? "success" : "running";
   const chars = resultChars(row);
-  const suffix = chars === undefined ? "" : theme?.fg(chars >= 50_000 ? "error" : chars >= 10_000 ? "warning" : "dim", `${compactCount(chars)} ch`) ?? `${compactCount(chars)} ch`;
-  return [fitRow(prefix(theme, tone), toolInvocation(row), suffix, width)];
+  const image = imageType(row.result?.content);
+  const fact = [image, chars === undefined || (image && chars === 0) ? undefined : `${compactCount(chars)} ch`]
+    .filter(Boolean)
+    .join(" · ");
+  const suffix = !fact
+    ? ""
+    : theme?.fg(chars !== undefined && chars >= 50_000 ? "error" : chars !== undefined && chars >= 10_000 ? "warning" : "dim", fact) ?? fact;
+  return [fitRow(prefix(theme, tone), toolInvocation(row), suffix, width, true)];
 }
 
 export function customSummary(row: CustomRow): { label: string; text: string; chars: number } {
@@ -121,5 +154,10 @@ export function renderCustomRow(row: CustomRow, width: number, theme?: Theme): s
   const label = theme?.fg("customMessageLabel", theme.bold(`[${summary.label}]`)) ?? `[${summary.label}]`;
   const body = `${label} ${summary.text}`;
   const suffix = theme?.fg("dim", `${compactCount(summary.chars)} ch`) ?? `${compactCount(summary.chars)} ch`;
-  return ["", fitRow(prefix(theme, "success"), body, suffix, width)];
+  const tone = /\b(?:fail|error|stop|abort)/i.test(summary.text)
+    ? "error"
+    : /\b(?:start|running|pending)/i.test(summary.text)
+      ? "running"
+      : "success";
+  return ["", fitRow(prefix(theme, tone), body, suffix, width)];
 }
