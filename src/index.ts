@@ -15,11 +15,7 @@ type PatchedPrototype = {
   __piTinyToolsPatch?: "tool" | "custom";
 };
 
-type Globals = typeof globalThis & {
-  __piTinyToolsTheme?: () => Theme | undefined;
-};
-
-const globals = globalThis as Globals;
+let currentTheme: (() => Theme | undefined) | undefined;
 
 function patch(
   prototype: PatchedPrototype,
@@ -35,7 +31,7 @@ function patch(
       return original.call(this, width);
     }
     try {
-      return compact(this, width, globals.__piTinyToolsTheme?.());
+      return compact(this, width, currentTheme?.());
     } catch {
       return original.call(this, width);
     }
@@ -66,12 +62,12 @@ export default function tinyTools(pi: ExtensionAPI): void {
   patch(customPrototype, "custom", (row, width, theme) => renderCustomRow(row as CustomRow, width, theme));
 
   pi.on("session_start", (_event, ctx) => {
-    globals.__piTinyToolsTheme = () => ctx.ui.theme;
+    currentTheme = () => ctx.ui.theme;
   });
 
   pi.on("session_shutdown", () => {
     restore(toolPrototype, "tool");
     restore(customPrototype, "custom");
-    globals.__piTinyToolsTheme = undefined;
+    currentTheme = undefined;
   });
 }

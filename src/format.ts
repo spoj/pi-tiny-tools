@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export type ContentBlock = {
   type?: unknown;
@@ -25,10 +25,6 @@ export type CustomRow = {
 const CAPTURE_WIDTH = 10_000;
 const PREFIX_WIDTH = 4;
 
-export function stripAnsi(text: string): string {
-  return text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-}
-
 export function textContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -52,7 +48,7 @@ function renderedInvocation(row: ToolRow): string | undefined {
   if (typeof render !== "function") return;
   const rendered = render.call(row.callRendererComponent, CAPTURE_WIDTH);
   if (!Array.isArray(rendered)) return;
-  const lines = rendered.map((line) => stripAnsi(String(line)).trim()).filter(Boolean);
+  const lines = rendered.map((line) => stripTerminalSequences(String(line)).trim()).filter(Boolean);
   if (lines.length === 0) return;
   const selected = row.toolName === "bash" ? lines.join(" ↵ ") : lines[0];
   return selected.replace(/^•\s*/, "").replace(/\s+\(timeout [^)]+\)\s*$/i, "");
