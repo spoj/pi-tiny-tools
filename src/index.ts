@@ -1,4 +1,5 @@
 import {
+  AssistantMessageComponent,
   CustomMessageComponent,
   ToolExecutionComponent,
   type ExtensionAPI,
@@ -14,8 +15,15 @@ type PatchedPrototype = {
   __piTinyToolsHadOwnRender?: boolean;
   __piTinyToolsPatch?: "tool" | "custom";
 };
+type SetHideThinking = (this: unknown, hide: boolean) => void;
+type PatchedAssistantPrototype = {
+  setHideThinkingBlock: SetHideThinking;
+  __piTinyToolsOriginalSetHideThinking?: SetHideThinking;
+  __piTinyToolsSetHideThinking?: SetHideThinking;
+};
 
 let currentTheme: (() => Theme | undefined) | undefined;
+let setToolsExpanded: ((expanded: boolean) => void) | undefined;
 
 function patch(
   prototype: PatchedPrototype,
@@ -54,20 +62,45 @@ function restore(prototype: PatchedPrototype, kind: "tool" | "custom"): void {
   delete prototype.__piTinyToolsPatch;
 }
 
+function patchThinking(prototype: PatchedAssistantPrototype): void {
+  if (prototype.__piTinyToolsSetHideThinking) return;
+  const original = prototype.setHideThinkingBlock;
+  const wrapper: SetHideThinking = function (hide) {
+    original.call(this, hide);
+    setToolsExpanded?.(!hide);
+  };
+  prototype.__piTinyToolsOriginalSetHideThinking = original;
+  prototype.__piTinyToolsSetHideThinking = wrapper;
+  prototype.setHideThinkingBlock = wrapper;
+}
+
+function restoreThinking(prototype: PatchedAssistantPrototype): void {
+  const original = prototype.__piTinyToolsOriginalSetHideThinking;
+  if (!original || prototype.setHideThinkingBlock !== prototype.__piTinyToolsSetHideThinking) return;
+  prototype.setHideThinkingBlock = original;
+  delete prototype.__piTinyToolsOriginalSetHideThinking;
+  delete prototype.__piTinyToolsSetHideThinking;
+}
+
 export default function tinyTools(pi: ExtensionAPI): void {
   const toolPrototype = ToolExecutionComponent.prototype as unknown as PatchedPrototype;
   const customPrototype = CustomMessageComponent.prototype as unknown as PatchedPrototype;
+  const assistantPrototype = AssistantMessageComponent.prototype as unknown as PatchedAssistantPrototype;
 
   patch(toolPrototype, "tool", (row, width, theme) => renderToolRow(row as ToolRow, width, theme));
   patch(customPrototype, "custom", (row, width, theme) => renderCustomRow(row as CustomRow, width, theme));
+  patchThinking(assistantPrototype);
 
   pi.on("session_start", (_event, ctx) => {
     currentTheme = () => ctx.ui.theme;
+    setToolsExpanded = (expanded) => ctx.ui.setToolsExpanded(expanded);
   });
 
   pi.on("session_shutdown", () => {
     restore(toolPrototype, "tool");
     restore(customPrototype, "custom");
+    restoreThinking(assistantPrototype);
     currentTheme = undefined;
+    setToolsExpanded = undefined;
   });
 }
