@@ -13,7 +13,7 @@ Press `Ctrl+O` to switch between the compact rows and Pi's complete native rende
 ## Install
 
 ```bash
-pi install npm:pi-tiny-tools
+pi install git:github.com/spoj/pi-tiny-tools
 ```
 
 Run a local checkout:
