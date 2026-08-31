@@ -18,6 +18,14 @@ test("uses Pi's call renderer for arbitrary tools", () => {
   assert.equal(toolInvocation(row), "anything useful");
 });
 
+test("strips terminal control sequences from tool invocations", () => {
+  const row = {
+    toolName: "anything",
+    callRendererComponent: { render: () => ["\x1b[?25l\x1b[1;1f• anything useful"] },
+  };
+  assert.equal(toolInvocation(row), "anything useful");
+});
+
 test("falls back to tool name and JSON arguments", () => {
   assert.equal(toolInvocation({ toolName: "mcp", args: { query: "hello" } }), 'mcp {"query":"hello"}');
 });

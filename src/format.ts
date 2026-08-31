@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export type ContentBlock = {
   type?: unknown;
@@ -24,6 +24,10 @@ export type CustomRow = {
 
 const CAPTURE_WIDTH = 10_000;
 const PREFIX_WIDTH = 4;
+
+function stripTerminalSequences(text: string): string {
+  return text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
 
 export function textContent(content: unknown): string {
   if (typeof content === "string") return content;
