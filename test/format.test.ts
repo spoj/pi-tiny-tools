@@ -35,7 +35,7 @@ test("counts only tool-result text", () => {
   assert.equal(resultChars({}), undefined);
 });
 
-test("tool rows are compact, width safe, and preserve their useful tail", () => {
+test("tool rows are compact, width safe, and truncate overflow at the end", () => {
   const row = {
     toolName: "read",
     args: { path: "/a/very/long/path/to/file.ts" },
@@ -46,8 +46,15 @@ test("tool rows are compact, width safe, and preserve their useful tail", () => 
   assert.equal(lines.length, 1);
   assert.ok(!lines[0].includes("▏"));
   assert.ok(lines[0].includes("1.2k ch"));
-  assert.ok(lines[0].includes("file.ts"));
+  assert.ok(lines[0].includes('read {"path":"/a/very/'));
+  assert.ok(!lines[0].includes("file.ts"));
   assert.ok(visibleWidth(lines[0]) <= 40);
+});
+
+test("long streaming tool calls keep their visible text stable", () => {
+  const first = renderToolRow({ toolName: "tool", args: { text: "x".repeat(100) } }, 30);
+  const updated = renderToolRow({ toolName: "tool", args: { text: `${"x".repeat(100)}changing tail` } }, 30);
+  assert.deepEqual(updated, first);
 });
 
 test("image results show their media type instead of zero characters", () => {

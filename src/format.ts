@@ -85,31 +85,12 @@ function compactCount(value: number): string {
   return `${(value / 1_000_000).toFixed(1)}m`;
 }
 
-function middleTruncate(text: string, width: number): string {
-  if (visibleWidth(text) <= width) return text;
-  if (width <= 1) return "…";
-  const chars = Array.from(text);
-  const leftBudget = Math.ceil((width - 1) / 2);
-  const rightBudget = Math.floor((width - 1) / 2);
-  let left = "";
-  let right = "";
-  for (const char of chars) {
-    if (visibleWidth(left + char) > leftBudget) break;
-    left += char;
-  }
-  for (let index = chars.length - 1; index >= 0; index--) {
-    if (visibleWidth(chars[index] + right) > rightBudget) break;
-    right = chars[index] + right;
-  }
-  return `${left}…${right}`;
-}
-
-function fitRow(prefix: string, body: string, suffix: string, width: number, preserveTail = false): string {
+function fitRow(prefix: string, body: string, suffix: string, width: number): string {
   const safeWidth = Math.max(1, width);
   const suffixWidth = visibleWidth(suffix);
   const gap = suffix ? 2 : 0;
   const bodyWidth = Math.max(1, safeWidth - PREFIX_WIDTH - suffixWidth - gap - 2);
-  const fittedBody = preserveTail ? middleTruncate(body, bodyWidth) : truncateToWidth(body, bodyWidth, "…");
+  const fittedBody = truncateToWidth(body, bodyWidth, "…");
   const left = `${prefix}${fittedBody}`;
   if (!suffix || visibleWidth(left) + gap + suffixWidth > safeWidth) {
     return truncateToWidth(left, safeWidth, "…");
@@ -132,7 +113,7 @@ export function renderToolRow(row: ToolRow, width: number, theme?: Theme): strin
   const suffix = !fact
     ? ""
     : theme?.fg(chars !== undefined && chars >= 50_000 ? "error" : chars !== undefined && chars >= 10_000 ? "warning" : "dim", fact) ?? fact;
-  return [fitRow(prefix(theme, tone), toolInvocation(row), suffix, width, true)];
+  return [fitRow(prefix(theme, tone), toolInvocation(row), suffix, width)];
 }
 
 export function customSummary(row: CustomRow): { label: string; text: string; chars: number } {
