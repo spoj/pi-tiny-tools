@@ -29,3 +29,7 @@ The extension patches Pi's `ToolExecutionComponent` and `CustomMessageComponent`
 This uses private component state (`expanded`, tool data, and custom-message data) and may need an update when Pi changes those components. Compact-rendering failures fall back to Pi's native renderer.
 
 The extension changes display only. Tool results and custom-message content sent to the model remain complete.
+
+## Credit
+
+Inspired by [Traceline](https://github.com/tmustier/pine-of-glass/tree/main/extensions/pi-traceline), created by [tmustier](https://github.com/tmustier), which pioneered compact one-line tool traces and synchronized thinking/tool expansion for Pi.
