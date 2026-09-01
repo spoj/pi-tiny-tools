@@ -136,7 +136,8 @@ export function customSummary(row: CustomRow): { label: string; text: string; ch
 export function renderCustomRow(row: CustomRow, width: number, theme?: Theme): string[] {
   const summary = customSummary(row);
   const label = theme?.fg("customMessageLabel", theme.bold(`[${summary.label}]`)) ?? `[${summary.label}]`;
-  const body = `${label} ${summary.text}`;
+  const text = theme?.fg("muted", summary.text) ?? summary.text;
+  const body = `${label} ${text}`;
   const suffix = theme?.fg("dim", `${compactCount(summary.chars)} ch`) ?? `${compactCount(summary.chars)} ch`;
   const tone = /\b(?:fail|error|stop|abort)/i.test(summary.text)
     ? "error"

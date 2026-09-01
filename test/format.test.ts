@@ -107,6 +107,20 @@ test("custom rows use customType and completion result", () => {
   assert.ok(lines[0].includes("Result: Finished the work."));
 });
 
+test("custom row labels stay purple while their text is muted", () => {
+  const colors: Array<[string, string]> = [];
+  const theme = {
+    bold: (text: string) => text,
+    fg(color: string, text: string) {
+      colors.push([color, text]);
+      return text;
+    },
+  } as unknown as Theme;
+  renderCustomRow({ message: { customType: "extension", content: "message" } }, 80, theme);
+  assert.ok(colors.some(([color, text]) => color === "customMessageLabel" && text === "[extension]"));
+  assert.ok(colors.some(([color, text]) => color === "muted" && text === "message"));
+});
+
 test("custom rows stay width safe", () => {
   const lines = renderCustomRow({ message: { customType: "extension", content: "x".repeat(500) } }, 32);
   assert.ok(lines.every((line) => visibleWidth(line) <= 32));
