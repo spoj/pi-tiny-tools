@@ -60,7 +60,7 @@ test("patches compact rows, groups traces, and syncs tool expansion with thinkin
   assert.deepEqual(hiddenThinking.render(80), []);
 
   const trace = new Container();
-  trace.addChild({ render: () => ["assistant"], invalidate() {} });
+  trace.addChild({ render: () => ["assistant", " "], invalidate() {} });
   trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
     render: () => ["  › tool"],
@@ -76,7 +76,7 @@ test("patches compact rows, groups traces, and syncs tool expansion with thinkin
     render: () => ["  › second tool"],
   }));
   assert.deepEqual(trace.render(80), [
-    "assistant", "", "  › tool", "  › custom", "", "next message", "", "  › second tool",
+    "assistant", " ", "", "  › tool", "  › custom", "", "next message", "", "  › second tool",
   ]);
 
   assistantPrototype.setHideThinkingBlock.call({}, false);

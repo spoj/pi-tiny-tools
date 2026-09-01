@@ -94,18 +94,27 @@ function patchContainer(prototype: PatchedContainerPrototype): void {
     if (!children.some(isCompactTrace)) return original.call(this, width);
 
     const lines: string[] = [];
+    let pendingBlankLines: string[] = [];
     let previousVisibleWasTrace = false;
     for (const child of children) {
       const childLines = child.render(width);
+      const visible = childLines.some((line) => !isBlank(line));
+      if (!visible) {
+        pendingBlankLines.push(...childLines);
+        continue;
+      }
+
       const trace = isCompactTrace(child);
       if (trace) {
-        while (lines.length > 0 && isBlank(lines[lines.length - 1])) lines.pop();
         if (!previousVisibleWasTrace && lines.length > 0) lines.push("");
+      } else {
+        lines.push(...pendingBlankLines);
       }
+      pendingBlankLines = [];
       lines.push(...childLines);
-      if (trace || childLines.some((line) => !isBlank(line))) previousVisibleWasTrace = trace;
+      previousVisibleWasTrace = trace;
     }
-    return lines;
+    return [...lines, ...pendingBlankLines];
   };
   prototype.__piTinyToolsOriginalContainerRender = original;
   prototype.__piTinyToolsContainerRender = render;
