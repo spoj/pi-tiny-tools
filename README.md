@@ -8,7 +8,7 @@ A small [Pi](https://github.com/earendil-works/pi-mono) extension that replaces 
   › [pi-subagents] Subagent completed · Result: done  0.2k ch
 ```
 
-Press `Ctrl+O` to switch between the compact rows and Pi's complete native rendering. Showing or hiding thinking with `Ctrl+T` expands or collapses tools with it. Normal user and assistant messages are not changed.
+Press `Ctrl+O` to switch between the compact rows and Pi's complete native rendering. Showing or hiding thinking with `Ctrl+T` expands or collapses tools with it. The `Thinking...` placeholder for hidden thinking is also hidden. Normal user and assistant messages are not changed.
 
 ## Install
 

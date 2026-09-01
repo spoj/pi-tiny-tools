@@ -94,6 +94,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     currentTheme = () => ctx.ui.theme;
     setToolsExpanded = (expanded) => ctx.ui.setToolsExpanded(expanded);
+    ctx.ui.setHiddenThinkingLabel("");
   });
 
   pi.on("session_shutdown", () => {

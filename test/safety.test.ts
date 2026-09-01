@@ -35,11 +35,14 @@ test("patches compact rows and syncs tool expansion with thinking", () => {
   assert.equal(userPrototype.render, nativeUserRender);
 
   let toolsExpanded = false;
+  let hiddenThinkingLabel = "Thinking...";
   handlers.get("session_start")?.({}, {
     ui: {
       setToolsExpanded: (expanded: boolean) => { toolsExpanded = expanded; },
+      setHiddenThinkingLabel: (label: string) => { hiddenThinkingLabel = label; },
     },
   });
+  assert.equal(hiddenThinkingLabel, "");
   assistantPrototype.setHideThinkingBlock.call({}, false);
   assert.equal(toolsExpanded, true);
   assistantPrototype.setHideThinkingBlock.call({}, true);
