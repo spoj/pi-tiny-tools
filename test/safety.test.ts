@@ -8,7 +8,7 @@ import {
   UserMessageComponent,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
-import { Container } from "@earendil-works/pi-tui";
+import { Container, Spacer } from "@earendil-works/pi-tui";
 import tinyTools from "../src/index.ts";
 
 test("patches compact rows, groups traces, and syncs tool expansion with thinking", () => {
@@ -65,7 +65,7 @@ test("patches compact rows, groups traces, and syncs tool expansion with thinkin
     expanded: false,
     render: () => ["  › tool"],
   }));
-  trace.addChild({ render: () => [""], invalidate() {} });
+  trace.addChild(new Spacer(1));
   trace.addChild(Object.assign(Object.create(CustomMessageComponent.prototype), {
     _expanded: false,
     render: () => ["  › custom"],

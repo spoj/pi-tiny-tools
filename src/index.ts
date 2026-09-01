@@ -5,7 +5,7 @@ import {
   type ExtensionAPI,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Container } from "@earendil-works/pi-tui";
+import { Container, Spacer } from "@earendil-works/pi-tui";
 import { renderCustomRow, renderToolRow, stripTerminalSequences, type CustomRow, type ToolRow } from "./format.ts";
 
 type Render = (this: unknown, width: number) => string[];
@@ -86,35 +86,36 @@ function isCompactTrace(component: unknown): boolean {
   return false;
 }
 
+function renderTraceGroups(children: Array<{ render: (width: number) => string[] }>, width: number): string[] {
+  const output: string[] = [];
+  let pendingSpacing: string[] = [];
+  let previous: "content" | "trace" | undefined;
+
+  for (const child of children) {
+    const lines = child.render(width);
+    if (child instanceof Spacer || lines.length === 0) {
+      pendingSpacing.push(...lines);
+      continue;
+    }
+
+    const current = isCompactTrace(child) ? "trace" : "content";
+    if (current === "content") output.push(...pendingSpacing);
+    else if (previous === "content") output.push("");
+    output.push(...lines);
+    pendingSpacing = [];
+    previous = current;
+  }
+
+  return [...output, ...pendingSpacing];
+}
+
+// Trace rows can only be grouped where their parent combines sibling output.
 function patchContainer(prototype: PatchedContainerPrototype): void {
   if (prototype.__piTinyToolsContainerRender) return;
   const original = prototype.render;
   const render: Render = function (width) {
     const children = (this as { children: Array<{ render: (width: number) => string[] }> }).children;
-    if (!children.some(isCompactTrace)) return original.call(this, width);
-
-    const lines: string[] = [];
-    let pendingBlankLines: string[] = [];
-    let previousVisibleWasTrace = false;
-    for (const child of children) {
-      const childLines = child.render(width);
-      const visible = childLines.some((line) => !isBlank(line));
-      if (!visible) {
-        pendingBlankLines.push(...childLines);
-        continue;
-      }
-
-      const trace = isCompactTrace(child);
-      if (trace) {
-        if (!previousVisibleWasTrace && lines.length > 0) lines.push("");
-      } else {
-        lines.push(...pendingBlankLines);
-      }
-      pendingBlankLines = [];
-      lines.push(...childLines);
-      previousVisibleWasTrace = trace;
-    }
-    return [...lines, ...pendingBlankLines];
+    return children.some(isCompactTrace) ? renderTraceGroups(children, width) : original.call(this, width);
   };
   prototype.__piTinyToolsOriginalContainerRender = original;
   prototype.__piTinyToolsContainerRender = render;
