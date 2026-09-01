@@ -5,6 +5,7 @@ import {
   type ExtensionAPI,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
 import { renderCustomRow, renderToolRow, stripTerminalSequences, type CustomRow, type ToolRow } from "./format.ts";
 
 type Render = (this: unknown, width: number) => string[];
@@ -14,6 +15,11 @@ type PatchedPrototype = {
   __piTinyToolsRender?: Render;
   __piTinyToolsHadOwnRender?: boolean;
   __piTinyToolsPatch?: "tool" | "custom";
+};
+type PatchedContainerPrototype = {
+  render: Render;
+  __piTinyToolsOriginalContainerRender?: Render;
+  __piTinyToolsContainerRender?: Render;
 };
 type SetHideThinking = (this: unknown, hide: boolean) => void;
 type PatchedAssistantPrototype = {
@@ -65,12 +71,60 @@ function restore(prototype: PatchedPrototype, kind: "tool" | "custom"): void {
   delete prototype.__piTinyToolsPatch;
 }
 
+function isBlank(line: string): boolean {
+  return stripTerminalSequences(line).trim() === "";
+}
+
+function isCompactTrace(component: unknown): boolean {
+  if (component instanceof ToolExecutionComponent) {
+    const tool = component as unknown as { expanded?: unknown; hideComponent?: unknown };
+    return tool.expanded !== true && tool.hideComponent !== true;
+  }
+  if (component instanceof CustomMessageComponent) {
+    return (component as unknown as { _expanded?: unknown })._expanded !== true;
+  }
+  return false;
+}
+
+function patchContainer(prototype: PatchedContainerPrototype): void {
+  if (prototype.__piTinyToolsContainerRender) return;
+  const original = prototype.render;
+  const render: Render = function (width) {
+    const children = (this as { children: Array<{ render: (width: number) => string[] }> }).children;
+    if (!children.some(isCompactTrace)) return original.call(this, width);
+
+    const lines: string[] = [];
+    let previousVisibleWasTrace = false;
+    for (const child of children) {
+      const childLines = child.render(width);
+      const trace = isCompactTrace(child);
+      if (trace) {
+        while (lines.length > 0 && isBlank(lines[lines.length - 1])) lines.pop();
+        if (!previousVisibleWasTrace && lines.length > 0) lines.push("");
+      }
+      lines.push(...childLines);
+      if (trace || childLines.some((line) => !isBlank(line))) previousVisibleWasTrace = trace;
+    }
+    return lines;
+  };
+  prototype.__piTinyToolsOriginalContainerRender = original;
+  prototype.__piTinyToolsContainerRender = render;
+  prototype.render = render;
+}
+
+function restoreContainer(prototype: PatchedContainerPrototype): void {
+  const original = prototype.__piTinyToolsOriginalContainerRender;
+  if (original && prototype.render === prototype.__piTinyToolsContainerRender) prototype.render = original;
+  delete prototype.__piTinyToolsOriginalContainerRender;
+  delete prototype.__piTinyToolsContainerRender;
+}
+
 function patchAssistant(prototype: PatchedAssistantPrototype): void {
   if (prototype.__piTinyToolsSetHideThinking) return;
   const originalRender = prototype.render;
   const render: Render = function (width) {
     const lines = originalRender.call(this, width);
-    return lines.every((line) => stripTerminalSequences(line).trim() === "") ? [] : lines;
+    return lines.every(isBlank) ? [] : lines;
   };
   const originalSetHideThinking = prototype.setHideThinkingBlock;
   const setHideThinking: SetHideThinking = function (hide) {
@@ -103,10 +157,12 @@ export default function tinyTools(pi: ExtensionAPI): void {
   const toolPrototype = ToolExecutionComponent.prototype as unknown as PatchedPrototype;
   const customPrototype = CustomMessageComponent.prototype as unknown as PatchedPrototype;
   const assistantPrototype = AssistantMessageComponent.prototype as unknown as PatchedAssistantPrototype;
+  const containerPrototype = Container.prototype as unknown as PatchedContainerPrototype;
 
   patch(toolPrototype, "tool", (row, width, theme) => renderToolRow(row as ToolRow, width, theme));
   patch(customPrototype, "custom", (row, width, theme) => renderCustomRow(row as CustomRow, width, theme));
   patchAssistant(assistantPrototype);
+  patchContainer(containerPrototype);
 
   pi.on("session_start", (_event, ctx) => {
     currentTheme = () => ctx.ui.theme;
@@ -118,6 +174,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
     restore(toolPrototype, "tool");
     restore(customPrototype, "custom");
     restoreAssistant(assistantPrototype);
+    restoreContainer(containerPrototype);
     currentTheme = undefined;
     setToolsExpanded = undefined;
   });

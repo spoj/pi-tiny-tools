@@ -8,9 +8,10 @@ import {
   UserMessageComponent,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
 import tinyTools from "../src/index.ts";
 
-test("patches compact rows and syncs tool expansion with thinking", () => {
+test("patches compact rows, groups traces, and syncs tool expansion with thinking", () => {
   initTheme();
   const toolPrototype = ToolExecutionComponent.prototype as unknown as { render: unknown };
   const customPrototype = CustomMessageComponent.prototype as unknown as { render: unknown };
@@ -19,11 +20,13 @@ test("patches compact rows and syncs tool expansion with thinking", () => {
     setHideThinkingBlock: (this: unknown, hide: boolean) => void;
   };
   const userPrototype = UserMessageComponent.prototype as unknown as { render: unknown };
+  const containerPrototype = Container.prototype as unknown as { render: unknown };
   const nativeToolRender = toolPrototype.render;
   const nativeCustomRender = customPrototype.render;
   const nativeAssistantRender = assistantPrototype.render;
   const nativeSetHideThinking = assistantPrototype.setHideThinkingBlock;
   const nativeUserRender = userPrototype.render;
+  const nativeContainerRender = containerPrototype.render;
   const handlers = new Map<string, (event?: unknown, ctx?: unknown) => void>();
   const pi = {
     on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
@@ -38,6 +41,7 @@ test("patches compact rows and syncs tool expansion with thinking", () => {
   assert.notEqual(assistantPrototype.render, nativeAssistantRender);
   assert.notEqual(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
   assert.equal(userPrototype.render, nativeUserRender);
+  assert.notEqual(containerPrototype.render, nativeContainerRender);
 
   let toolsExpanded = false;
   let hiddenThinkingLabel = "Thinking...";
@@ -55,6 +59,26 @@ test("patches compact rows and syncs tool expansion with thinking", () => {
   } as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0], true, undefined, "");
   assert.deepEqual(hiddenThinking.render(80), []);
 
+  const trace = new Container();
+  trace.addChild({ render: () => ["assistant"], invalidate() {} });
+  trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
+    expanded: false,
+    render: () => ["  › tool"],
+  }));
+  trace.addChild({ render: () => [""], invalidate() {} });
+  trace.addChild(Object.assign(Object.create(CustomMessageComponent.prototype), {
+    _expanded: false,
+    render: () => ["  › custom"],
+  }));
+  trace.addChild({ render: () => ["", "next message"], invalidate() {} });
+  trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
+    expanded: false,
+    render: () => ["  › second tool"],
+  }));
+  assert.deepEqual(trace.render(80), [
+    "assistant", "", "  › tool", "  › custom", "", "next message", "", "  › second tool",
+  ]);
+
   assistantPrototype.setHideThinkingBlock.call({}, false);
   assert.equal(toolsExpanded, true);
   assistantPrototype.setHideThinkingBlock.call({}, true);
@@ -68,4 +92,5 @@ test("patches compact rows and syncs tool expansion with thinking", () => {
   assert.equal(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
   assert.equal(Object.hasOwn(CustomMessageComponent.prototype, "render"), false);
   assert.equal(userPrototype.render, nativeUserRender);
+  assert.equal(containerPrototype.render, nativeContainerRender);
 });
