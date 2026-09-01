@@ -47,6 +47,17 @@ function compactJson(value: unknown): string {
   }
 }
 
+function normalizeToolTitle(line: string, name: string): string {
+  let cursor = 0;
+  for (const character of name) {
+    while (/\s/.test(line[cursor] ?? "")) cursor++;
+    if (line[cursor] !== character) return line;
+    cursor++;
+  }
+  if (cursor < line.length && !/\s/.test(line[cursor])) return line;
+  return `${name}${line.slice(cursor)}`;
+}
+
 function renderedInvocation(row: ToolRow): string | undefined {
   const render = row.callRendererComponent?.render;
   if (typeof render !== "function") return;
@@ -55,10 +66,13 @@ function renderedInvocation(row: ToolRow): string | undefined {
   const lines = rendered.map((line) => stripTerminalSequences(String(line)).trim()).filter(Boolean);
   if (lines.length === 0) return;
   const name = typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
-  return lines[0]
-    .replace(/^•\s*/, "")
-    .replace(/^\$\s*/, `${name} `)
-    .replace(/\s+\(timeout [^)]+\)\s*$/i, "");
+  return normalizeToolTitle(
+    lines[0]
+      .replace(/^•\s*/, "")
+      .replace(/^\$\s*/, `${name} `)
+      .replace(/\s+\(timeout [^)]+\)\s*$/i, ""),
+    name,
+  );
 }
 
 export function toolInvocation(row: ToolRow): string {

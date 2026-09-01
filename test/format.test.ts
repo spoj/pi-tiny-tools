@@ -27,6 +27,14 @@ test("strips terminal control sequences from tool invocations", () => {
   assert.equal(toolInvocation(row), "anything useful");
 });
 
+test("normalizes spaced tool titles before adding the tool name", () => {
+  const row = {
+    toolName: "ForkSteer",
+    callRendererComponent: { render: () => ["Fork Steer fork-1234"] },
+  };
+  assert.equal(toolInvocation(row), "ForkSteer fork-1234");
+});
+
 test("renders shell calls like normal tool calls", () => {
   const row = {
     toolName: "bash",
