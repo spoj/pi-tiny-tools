@@ -80,9 +80,9 @@ test("custom rows use customType and completion result", () => {
     chars: 59,
   });
   const lines = renderCustomRow(row, 100);
-  assert.equal(lines.length, 2);
-  assert.ok(lines[1].includes("[pi-subagents]"));
-  assert.ok(lines[1].includes("Result: Finished the work."));
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].includes("[pi-subagents]"));
+  assert.ok(lines[0].includes("Result: Finished the work."));
 });
 
 test("custom rows stay width safe", () => {

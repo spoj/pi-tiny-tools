@@ -139,5 +139,5 @@ export function renderCustomRow(row: CustomRow, width: number, theme?: Theme): s
     : /\b(?:start|running|pending)/i.test(summary.text)
       ? "running"
       : "success";
-  return ["", fitRow(prefix(theme, tone), body, suffix, width)];
+  return [fitRow(prefix(theme, tone), body, suffix, width)];
 }
