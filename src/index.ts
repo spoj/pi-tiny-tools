@@ -5,7 +5,7 @@ import {
   type ExtensionAPI,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { renderCustomRow, renderToolRow, type CustomRow, type ToolRow } from "./format.ts";
+import { renderCustomRow, renderToolRow, stripTerminalSequences, type CustomRow, type ToolRow } from "./format.ts";
 
 type Render = (this: unknown, width: number) => string[];
 type PatchedPrototype = {
@@ -17,7 +17,10 @@ type PatchedPrototype = {
 };
 type SetHideThinking = (this: unknown, hide: boolean) => void;
 type PatchedAssistantPrototype = {
+  render: Render;
   setHideThinkingBlock: SetHideThinking;
+  __piTinyToolsOriginalAssistantRender?: Render;
+  __piTinyToolsAssistantRender?: Render;
   __piTinyToolsOriginalSetHideThinking?: SetHideThinking;
   __piTinyToolsSetHideThinking?: SetHideThinking;
 };
@@ -62,22 +65,36 @@ function restore(prototype: PatchedPrototype, kind: "tool" | "custom"): void {
   delete prototype.__piTinyToolsPatch;
 }
 
-function patchThinking(prototype: PatchedAssistantPrototype): void {
+function patchAssistant(prototype: PatchedAssistantPrototype): void {
   if (prototype.__piTinyToolsSetHideThinking) return;
-  const original = prototype.setHideThinkingBlock;
-  const wrapper: SetHideThinking = function (hide) {
-    original.call(this, hide);
+  const originalRender = prototype.render;
+  const render: Render = function (width) {
+    const lines = originalRender.call(this, width);
+    return lines.every((line) => stripTerminalSequences(line).trim() === "") ? [] : lines;
+  };
+  const originalSetHideThinking = prototype.setHideThinkingBlock;
+  const setHideThinking: SetHideThinking = function (hide) {
+    originalSetHideThinking.call(this, hide);
     setToolsExpanded?.(!hide);
   };
-  prototype.__piTinyToolsOriginalSetHideThinking = original;
-  prototype.__piTinyToolsSetHideThinking = wrapper;
-  prototype.setHideThinkingBlock = wrapper;
+  prototype.__piTinyToolsOriginalAssistantRender = originalRender;
+  prototype.__piTinyToolsAssistantRender = render;
+  prototype.render = render;
+  prototype.__piTinyToolsOriginalSetHideThinking = originalSetHideThinking;
+  prototype.__piTinyToolsSetHideThinking = setHideThinking;
+  prototype.setHideThinkingBlock = setHideThinking;
 }
 
-function restoreThinking(prototype: PatchedAssistantPrototype): void {
-  const original = prototype.__piTinyToolsOriginalSetHideThinking;
-  if (!original || prototype.setHideThinkingBlock !== prototype.__piTinyToolsSetHideThinking) return;
-  prototype.setHideThinkingBlock = original;
+function restoreAssistant(prototype: PatchedAssistantPrototype): void {
+  const originalRender = prototype.__piTinyToolsOriginalAssistantRender;
+  if (originalRender && prototype.render === prototype.__piTinyToolsAssistantRender) prototype.render = originalRender;
+  delete prototype.__piTinyToolsOriginalAssistantRender;
+  delete prototype.__piTinyToolsAssistantRender;
+
+  const originalSetHideThinking = prototype.__piTinyToolsOriginalSetHideThinking;
+  if (originalSetHideThinking && prototype.setHideThinkingBlock === prototype.__piTinyToolsSetHideThinking) {
+    prototype.setHideThinkingBlock = originalSetHideThinking;
+  }
   delete prototype.__piTinyToolsOriginalSetHideThinking;
   delete prototype.__piTinyToolsSetHideThinking;
 }
@@ -89,7 +106,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
 
   patch(toolPrototype, "tool", (row, width, theme) => renderToolRow(row as ToolRow, width, theme));
   patch(customPrototype, "custom", (row, width, theme) => renderCustomRow(row as CustomRow, width, theme));
-  patchThinking(assistantPrototype);
+  patchAssistant(assistantPrototype);
 
   pi.on("session_start", (_event, ctx) => {
     currentTheme = () => ctx.ui.theme;
@@ -100,7 +117,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
   pi.on("session_shutdown", () => {
     restore(toolPrototype, "tool");
     restore(customPrototype, "custom");
-    restoreThinking(assistantPrototype);
+    restoreAssistant(assistantPrototype);
     currentTheme = undefined;
     setToolsExpanded = undefined;
   });

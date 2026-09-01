@@ -25,7 +25,7 @@ export type CustomRow = {
 const CAPTURE_WIDTH = 10_000;
 const PREFIX_WIDTH = 4;
 
-function stripTerminalSequences(text: string): string {
+export function stripTerminalSequences(text: string): string {
   return text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }
 

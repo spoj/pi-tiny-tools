@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AssistantMessageComponent,
   CustomMessageComponent,
+  initTheme,
   ToolExecutionComponent,
   UserMessageComponent,
   type ExtensionAPI,
@@ -10,14 +11,17 @@ import {
 import tinyTools from "../src/index.ts";
 
 test("patches compact rows and syncs tool expansion with thinking", () => {
+  initTheme();
   const toolPrototype = ToolExecutionComponent.prototype as unknown as { render: unknown };
   const customPrototype = CustomMessageComponent.prototype as unknown as { render: unknown };
   const assistantPrototype = AssistantMessageComponent.prototype as unknown as {
+    render: (this: unknown, width: number) => string[];
     setHideThinkingBlock: (this: unknown, hide: boolean) => void;
   };
   const userPrototype = UserMessageComponent.prototype as unknown as { render: unknown };
   const nativeToolRender = toolPrototype.render;
   const nativeCustomRender = customPrototype.render;
+  const nativeAssistantRender = assistantPrototype.render;
   const nativeSetHideThinking = assistantPrototype.setHideThinkingBlock;
   const nativeUserRender = userPrototype.render;
   const handlers = new Map<string, (event?: unknown, ctx?: unknown) => void>();
@@ -31,6 +35,7 @@ test("patches compact rows and syncs tool expansion with thinking", () => {
 
   assert.notEqual(toolPrototype.render, nativeToolRender);
   assert.notEqual(customPrototype.render, nativeCustomRender);
+  assert.notEqual(assistantPrototype.render, nativeAssistantRender);
   assert.notEqual(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
   assert.equal(userPrototype.render, nativeUserRender);
 
@@ -43,6 +48,13 @@ test("patches compact rows and syncs tool expansion with thinking", () => {
     },
   });
   assert.equal(hiddenThinkingLabel, "");
+
+  const hiddenThinking = new AssistantMessageComponent({
+    content: [{ type: "thinking", thinking: "hidden" }, { type: "toolCall" }],
+    stopReason: "toolUse",
+  } as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0], true, undefined, "");
+  assert.deepEqual(hiddenThinking.render(80), []);
+
   assistantPrototype.setHideThinkingBlock.call({}, false);
   assert.equal(toolsExpanded, true);
   assistantPrototype.setHideThinkingBlock.call({}, true);
@@ -52,6 +64,7 @@ test("patches compact rows and syncs tool expansion with thinking", () => {
 
   assert.equal(toolPrototype.render, nativeToolRender);
   assert.equal(customPrototype.render, nativeCustomRender);
+  assert.equal(assistantPrototype.render, nativeAssistantRender);
   assert.equal(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
   assert.equal(Object.hasOwn(CustomMessageComponent.prototype, "render"), false);
   assert.equal(userPrototype.render, nativeUserRender);
