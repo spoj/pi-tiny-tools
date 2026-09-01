@@ -60,7 +60,7 @@ test("tool rows are compact, width safe, and truncate overflow at the end", () =
   assert.ok(visibleWidth(lines[0]) <= 40);
 });
 
-test("tool text is muted without muting the status marker", () => {
+test("tool marker and name share the status color while details stay muted", () => {
   const colors: Array<[string, string]> = [];
   const theme = {
     fg(color: string, text: string) {
@@ -68,9 +68,14 @@ test("tool text is muted without muting the status marker", () => {
       return text;
     },
   } as unknown as Theme;
-  renderToolRow({ toolName: "read", result: { content: [], isError: false } }, 80, theme);
-  assert.ok(colors.some(([color, text]) => color === "muted" && text === "read"));
+  const callRendererComponent = { render: () => ["$ git status"] };
+  renderToolRow({ toolName: "bash", callRendererComponent, result: { content: [], isError: false } }, 80, theme);
+  renderToolRow({ toolName: "bash", callRendererComponent, result: { content: [], isError: true } }, 80, theme);
   assert.ok(colors.some(([color, text]) => color === "success" && text === "›"));
+  assert.ok(colors.some(([color, text]) => color === "success" && text === "bash"));
+  assert.ok(colors.some(([color, text]) => color === "error" && text === "›"));
+  assert.ok(colors.some(([color, text]) => color === "error" && text === "bash"));
+  assert.ok(colors.some(([color, text]) => color === "muted" && text === " git status"));
 });
 
 test("long streaming tool calls keep their visible text stable", () => {
@@ -107,7 +112,7 @@ test("custom rows use customType and completion result", () => {
   assert.ok(lines[0].includes("Result: Finished the work."));
 });
 
-test("custom row labels stay purple while their text is muted", () => {
+test("custom row markers and labels stay purple while their text is muted", () => {
   const colors: Array<[string, string]> = [];
   const theme = {
     bold: (text: string) => text,
@@ -117,6 +122,7 @@ test("custom row labels stay purple while their text is muted", () => {
     },
   } as unknown as Theme;
   renderCustomRow({ message: { customType: "extension", content: "message" } }, 80, theme);
+  assert.ok(colors.some(([color, text]) => color === "customMessageLabel" && text === "›"));
   assert.ok(colors.some(([color, text]) => color === "customMessageLabel" && text === "[extension]"));
   assert.ok(colors.some(([color, text]) => color === "muted" && text === "message"));
 });

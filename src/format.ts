@@ -101,13 +101,15 @@ function fitRow(prefix: string, body: string, suffix: string, width: number): st
   return `${left}${" ".repeat(safeWidth - visibleWidth(left) - suffixWidth)}${suffix}`;
 }
 
-function prefix(theme: Theme | undefined, tone: "running" | "success" | "error"): string {
-  const bullet = theme?.fg(tone === "running" ? "accent" : tone, "›") ?? "›";
+type LabelColor = "accent" | "success" | "error" | "customMessageLabel";
+
+function prefix(theme: Theme | undefined, color: LabelColor): string {
+  const bullet = theme?.fg(color, "›") ?? "›";
   return `  ${bullet} `;
 }
 
 export function renderToolRow(row: ToolRow, width: number, theme?: Theme): string[] {
-  const tone = row.result?.isError ? "error" : row.result && row.isPartial !== true ? "success" : "running";
+  const color = row.result?.isError ? "error" : row.result && row.isPartial !== true ? "success" : "accent";
   const chars = resultChars(row);
   const image = imageType(row.result?.content);
   const fact = [image, chars === undefined || (image && chars === 0) ? undefined : `${compactCount(chars)} ch`]
@@ -117,7 +119,10 @@ export function renderToolRow(row: ToolRow, width: number, theme?: Theme): strin
     ? ""
     : theme?.fg(chars !== undefined && chars >= 50_000 ? "error" : chars !== undefined && chars >= 10_000 ? "warning" : "dim", fact) ?? fact;
   const invocation = toolInvocation(row);
-  return [fitRow(prefix(theme, tone), theme?.fg("muted", invocation) ?? invocation, suffix, width)];
+  const name = typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
+  const label = theme?.fg(color, name) ?? name;
+  const details = theme?.fg("muted", invocation.slice(name.length)) ?? invocation.slice(name.length);
+  return [fitRow(prefix(theme, color), `${label}${details}`, suffix, width)];
 }
 
 export function customSummary(row: CustomRow): { label: string; text: string; chars: number } {
@@ -135,14 +140,10 @@ export function customSummary(row: CustomRow): { label: string; text: string; ch
 
 export function renderCustomRow(row: CustomRow, width: number, theme?: Theme): string[] {
   const summary = customSummary(row);
-  const label = theme?.fg("customMessageLabel", theme.bold(`[${summary.label}]`)) ?? `[${summary.label}]`;
+  const color = "customMessageLabel";
+  const label = theme?.fg(color, theme.bold(`[${summary.label}]`)) ?? `[${summary.label}]`;
   const text = theme?.fg("muted", summary.text) ?? summary.text;
   const body = `${label} ${text}`;
   const suffix = theme?.fg("dim", `${compactCount(summary.chars)} ch`) ?? `${compactCount(summary.chars)} ch`;
-  const tone = /\b(?:fail|error|stop|abort)/i.test(summary.text)
-    ? "error"
-    : /\b(?:start|running|pending)/i.test(summary.text)
-      ? "running"
-      : "success";
-  return [fitRow(prefix(theme, tone), body, suffix, width)];
+  return [fitRow(prefix(theme, color), body, suffix, width)];
 }
