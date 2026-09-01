@@ -4,7 +4,7 @@ A small [Pi](https://github.com/earendil-works/pi-mono) extension that replaces 
 
 ```text
   › read src/index.ts:1-120                         4.2k ch
-  › $ npm test                                      1.8k ch
+  › bash npm test                                   1.8k ch
   › [pi-subagents] Subagent completed · Result: done  0.2k ch
 ```
 

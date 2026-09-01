@@ -26,6 +26,14 @@ test("strips terminal control sequences from tool invocations", () => {
   assert.equal(toolInvocation(row), "anything useful");
 });
 
+test("renders shell calls like normal tool calls", () => {
+  const row = {
+    toolName: "bash",
+    callRendererComponent: { render: () => ["$ git status", "second line"] },
+  };
+  assert.equal(toolInvocation(row), "bash git status");
+});
+
 test("falls back to tool name and JSON arguments", () => {
   assert.equal(toolInvocation({ toolName: "mcp", args: { query: "hello" } }), 'mcp {"query":"hello"}');
 });

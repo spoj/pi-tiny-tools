@@ -54,8 +54,11 @@ function renderedInvocation(row: ToolRow): string | undefined {
   if (!Array.isArray(rendered)) return;
   const lines = rendered.map((line) => stripTerminalSequences(String(line)).trim()).filter(Boolean);
   if (lines.length === 0) return;
-  const selected = row.toolName === "bash" ? lines.join(" ↵ ") : lines[0];
-  return selected.replace(/^•\s*/, "").replace(/\s+\(timeout [^)]+\)\s*$/i, "");
+  const name = typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
+  return lines[0]
+    .replace(/^•\s*/, "")
+    .replace(/^\$\s*/, `${name} `)
+    .replace(/\s+\(timeout [^)]+\)\s*$/i, "");
 }
 
 export function toolInvocation(row: ToolRow): string {
