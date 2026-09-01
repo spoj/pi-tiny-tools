@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { customSummary, renderCustomRow, renderToolRow, resultChars, textContent, toolInvocation } from "../src/format.ts";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 test("extracts text without changing non-text blocks", () => {
@@ -57,6 +58,19 @@ test("tool rows are compact, width safe, and truncate overflow at the end", () =
   assert.ok(lines[0].includes('read {"path":"/a/very/'));
   assert.ok(!lines[0].includes("file.ts"));
   assert.ok(visibleWidth(lines[0]) <= 40);
+});
+
+test("tool text is muted without muting the status marker", () => {
+  const colors: Array<[string, string]> = [];
+  const theme = {
+    fg(color: string, text: string) {
+      colors.push([color, text]);
+      return text;
+    },
+  } as unknown as Theme;
+  renderToolRow({ toolName: "read", result: { content: [], isError: false } }, 80, theme);
+  assert.ok(colors.some(([color, text]) => color === "muted" && text === "read"));
+  assert.ok(colors.some(([color, text]) => color === "success" && text === "›"));
 });
 
 test("long streaming tool calls keep their visible text stable", () => {

@@ -116,7 +116,8 @@ export function renderToolRow(row: ToolRow, width: number, theme?: Theme): strin
   const suffix = !fact
     ? ""
     : theme?.fg(chars !== undefined && chars >= 50_000 ? "error" : chars !== undefined && chars >= 10_000 ? "warning" : "dim", fact) ?? fact;
-  return [fitRow(prefix(theme, tone), toolInvocation(row), suffix, width)];
+  const invocation = toolInvocation(row);
+  return [fitRow(prefix(theme, tone), theme?.fg("muted", invocation) ?? invocation, suffix, width)];
 }
 
 export function customSummary(row: CustomRow): { label: string; text: string; chars: number } {
