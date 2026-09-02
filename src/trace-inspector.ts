@@ -8,7 +8,7 @@ export type TraceItem = {
   status: "pending" | "success" | "error";
   hidden?: boolean;
   call?: unknown;
-  output?: string | unknown[];
+  output?: string;
   result?: unknown;
   details?: unknown;
 };
@@ -17,20 +17,17 @@ export function ellipsizeId(id: string): string {
   return id.length <= 10 ? id : `${id.slice(0, 5)}…${id.slice(-4)}`;
 }
 
-function contentValue(content: unknown): string | unknown[] | undefined {
+type Content = string | Array<
+  | { type: "text"; text: string }
+  | { type: "image"; mimeType: string; data: string }
+>;
+
+function contentValue(content: Content): string {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return undefined;
-  const values = content.map((part) => {
-    if (part && typeof part === "object" && "type" in part) {
-      const block = part as { type: unknown; text?: unknown; mimeType?: unknown; data?: unknown };
-      if (block.type === "text" && typeof block.text === "string") return block.text;
-      if (block.type === "image") {
-        return `[image ${String(block.mimeType ?? "unknown")}, ${typeof block.data === "string" ? block.data.length : 0} base64 characters]`;
-      }
-    }
-    return part;
-  });
-  return values.every((value): value is string => typeof value === "string") ? values.join("\n") : values;
+  return content.map((part) => part.type === "text"
+    ? part.text
+    : `[image ${part.mimeType}, ${part.data.length} base64 characters]`
+  ).join("\n");
 }
 
 export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
