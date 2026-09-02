@@ -108,10 +108,21 @@ test("internal traces stay compact while native expansion state changes", () => 
   } as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0], false, undefined, "");
   assert.deepEqual(hiddenThinking.render(80), []);
 
+  const noThinkingAnswer = new AssistantMessageComponent({
+    content: [{ type: "text", text: "answer" }],
+    stopReason: "stop",
+  } as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0], false, undefined, "");
+  const nativeNoThinkingLines = nativeAssistantRender.call(noThinkingAnswer, 80);
+  assert.deepEqual(noThinkingAnswer.render(80), nativeNoThinkingLines);
+
   const visibleAnswer = new AssistantMessageComponent({
     content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "answer" }],
     stopReason: "stop",
   } as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0], false, undefined, "");
+  const visibleAnswerLines = visibleAnswer.render(80);
+  assert.equal(visibleAnswerLines.length, 1);
+  assert.match(visibleAnswerLines[0]!, /answer/);
+
   const answer = new Container();
   answer.addChild(visibleAnswer);
   const answerLines = answer.render(80);

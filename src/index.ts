@@ -146,7 +146,9 @@ export default function tinyTools(pi: ExtensionAPI): void {
       }),
       patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
         const lines = original.call(this, width);
-        return lines.every(isBlank) ? [] : lines;
+        if (!hasThinking(this)) return lines.every(isBlank) ? [] : lines;
+        const firstContent = lines.findIndex((line) => !isBlank(line));
+        return firstContent === -1 ? [] : lines.slice(firstContent);
       }),
       patchMethod(AssistantMessageComponent.prototype, "setHideThinkingBlock", (original) => function (this: AssistantMessageComponent) {
         original.call(this, true);
