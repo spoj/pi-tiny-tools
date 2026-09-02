@@ -76,7 +76,7 @@ function customEntry(component: unknown): { customType?: unknown } | undefined {
   return entry?.type === "custom" ? entry : undefined;
 }
 
-function isCompactTrace(component: unknown): boolean {
+function isMinimized(component: unknown): boolean {
   return isCompactTool(component)
     || component instanceof CustomMessageComponent
     || component instanceof BashExecutionComponent
@@ -119,7 +119,7 @@ function hasThinking(component: unknown): boolean {
   return message?.content?.some((part) => part.type === "thinking" && typeof part.thinking === "string" && part.thinking.trim()) === true;
 }
 
-function isQuietInternal(component: unknown): boolean {
+function isSilent(component: unknown): boolean {
   if (!(component instanceof Text)) return false;
   const text = stripTerminalSequences((component as unknown as { text: string }).text);
   return /^(?:(?:Compaction|Branch summary): .* tokens billed|Cache miss(?: after .*?)?: .* tokens re-billed)/.test(text);
@@ -129,8 +129,8 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
   const output: string[] = [];
   const traces: TraceRow[] = [];
   let pendingSpacing: string[] = [];
-  let skipQuietSpacing = false;
-  let quietTail = false;
+  let skipSilentSpacing = false;
+  let silentTail = false;
   let previous: "content" | "trace" | undefined;
 
   const flushTraces = (): void => {
@@ -143,24 +143,24 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
 
   for (const child of children) {
     if (child instanceof Spacer) {
-      if (!skipQuietSpacing) pendingSpacing.push(...child.render(width));
+      if (!skipSilentSpacing) pendingSpacing.push(...child.render(width));
       continue;
     }
-    if (isCompactTrace(child)) {
+    if (isMinimized(child)) {
       traces.push(compactTraceRow(child));
       pendingSpacing = [];
-      skipQuietSpacing = false;
-      quietTail = false;
+      skipSilentSpacing = false;
+      silentTail = false;
       continue;
     }
-    if (isQuietInternal(child)) {
-      skipQuietSpacing = true;
-      quietTail = true;
+    if (isSilent(child)) {
+      skipSilentSpacing = true;
+      silentTail = true;
       continue;
     }
 
-    skipQuietSpacing = false;
-    quietTail = false;
+    skipSilentSpacing = false;
+    silentTail = false;
     if (hasThinking(child)) {
       traces.push({ traceKind: "thinking" });
       pendingSpacing = [];
@@ -187,7 +187,7 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
   }
 
   flushTraces();
-  return quietTail ? output : [...output, ...pendingSpacing];
+  return silentTail ? output : [...output, ...pendingSpacing];
 }
 
 export default function tinyTools(pi: ExtensionAPI): void {
@@ -241,7 +241,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
         original.call(this, message, isStreaming);
       }),
       patchMethod(Container.prototype, "render", (original) => function (this: Container, width: number) {
-        return this.children.some((child) => isCompactTrace(child) || isQuietInternal(child) || hasThinking(child))
+        return this.children.some((child) => isMinimized(child) || isSilent(child) || hasThinking(child))
           ? renderTraceGroups(this.children, width)
           : original.call(this, width);
       }),
