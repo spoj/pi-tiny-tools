@@ -15,7 +15,7 @@ The default transcript is quiet:
 
 Internal names share one layout and flow onto indented continuation lines when needed. Thinking uses Pi's native thinking color. Compact traces have one leading blank line and no blank rows between items.
 
-`Ctrl+T` opens the trace inspector instead of toggling thinking. `Ctrl+O` is disabled because tool output is always compact. Run `/trace` or press `Ctrl+T` to inspect thinking, calls, results, and visible or hidden custom messages from the current session branch in a Pi overlay. It opens on the newest item and follows the current thinking trace while it streams.
+Run `/trace` or press `Alt+T` to inspect thinking, calls, results, and visible or hidden custom messages from the current session branch in a Pi overlay. It opens on the newest item and follows the current thinking trace while it streams. Pi's native `Ctrl+T` and `Ctrl+O` toggles remain available; their display effects are intentionally invisible while the compact trace renderer is active.
 
 - `j` / `k`: next / previous item
 - `PageDown` / `PageUp` or `Ctrl+D` / `Ctrl+U`: scroll the current item

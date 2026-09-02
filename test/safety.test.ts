@@ -15,7 +15,7 @@ import {
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import tinyTools from "../src/index.ts";
 
-test("internal traces stay compact and native expansion toggles are shadowed", () => {
+test("internal traces stay compact while native expansion state changes", () => {
   initTheme();
   const toolPrototype = ToolExecutionComponent.prototype as unknown as { render: unknown };
   const customPrototype = CustomMessageComponent.prototype as unknown as { render: unknown };
@@ -56,7 +56,7 @@ test("internal traces stay compact and native expansion toggles are shadowed", (
   assert.equal(userPrototype.render, nativeUserRender);
   assert.notEqual(containerPrototype.render, nativeContainerRender);
   assert.notEqual(SessionManager.prototype.buildContextEntries, nativeBuildContextEntries);
-  assert.deepEqual([...shortcuts.keys()], ["ctrl+t", "ctrl+o"]);
+  assert.deepEqual([...shortcuts.keys()], ["alt+t"]);
 
   const sessionManager = SessionManager.inMemory();
   sessionManager.appendCustomMessageEntry("hidden", "secret", false);
@@ -148,7 +148,6 @@ test("internal traces stay compact and native expansion toggles are shadowed", (
   second.expanded = true;
   assistantPrototype.setHideThinkingBlock.call(hiddenThinking, false);
   assert.deepEqual(trace.render(80), compact);
-  shortcuts.get("ctrl+o")?.();
   assert.deepEqual(trace.render(80), compact);
 
   handlers.get("session_shutdown")?.();

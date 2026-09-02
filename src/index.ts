@@ -265,13 +265,9 @@ export default function tinyTools(pi: ExtensionAPI): void {
     description: "Inspect tools, thinking, and custom messages",
     handler: async (_args, ctx) => showTraceInspector(ctx),
   });
-  pi.registerShortcut("ctrl+t", {
+  pi.registerShortcut("alt+t", {
     description: "Open the internal trace inspector",
     handler: showTraceInspector,
-  });
-  pi.registerShortcut("ctrl+o", {
-    description: "Tool expansion is disabled by pi-tiny-tools",
-    handler() {},
   });
 
   const toolPrototype = ToolExecutionComponent.prototype as unknown as PatchedPrototype;
