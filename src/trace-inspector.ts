@@ -345,7 +345,9 @@ export async function showTraceInspector(ctx: ExtensionContext): Promise<void> {
   if (ctx.mode !== "tui") return;
   const items = extractTraceItems(ctx.sessionManager.getBranch());
   for (const item of liveItems.values()) {
-    if (!items.some((candidate) => candidate.id === item.id)) items.push(item);
+    const index = items.findIndex((candidate) => candidate.id === item.id);
+    if (index === -1) items.push(item);
+    else if (items[index]!.status === "pending") items[index] = item;
   }
   if (items.length === 0) {
     ctx.ui.notify("No tools, thinking, or custom messages in the current branch", "info");
