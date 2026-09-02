@@ -14,6 +14,8 @@ import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequence
 import { finishLiveThinking, resetLiveThinking, showTraceInspector, updateLiveThinking } from "./trace-inspector.ts";
 
 let currentTheme: (() => Theme | undefined) | undefined;
+let patchUsers = 0;
+let restorePatches: (() => void)[] | undefined;
 
 function patchMethod<T extends object, K extends keyof T>(
   target: T,
@@ -132,40 +134,43 @@ export default function tinyTools(pi: ExtensionAPI): void {
     handler: showTraceInspector,
   });
 
-  const restores = [
-    patchMethod(ToolExecutionComponent.prototype, "render", (original) => function (this: ToolExecutionComponent, width: number) {
-      if ((this as unknown as { hideComponent?: unknown }).hideComponent === true) return original.call(this, width);
-      return renderToolRow(this as unknown as ToolRow, width, currentTheme?.());
-    }),
-    patchMethod(CustomMessageComponent.prototype, "render", () => function (this: CustomMessageComponent, width: number) {
-      return renderCustomRow(this as unknown as CustomRow, width, currentTheme?.());
-    }),
-    patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
-      const lines = original.call(this, width);
-      return lines.every(isBlank) ? [] : lines;
-    }),
-    patchMethod(AssistantMessageComponent.prototype, "setHideThinkingBlock", (original) => function (this: AssistantMessageComponent) {
-      original.call(this, true);
-    }),
-    patchMethod(AssistantMessageComponent.prototype, "updateContent", (original) => function (
-      this: AssistantMessageComponent,
-      message: Parameters<AssistantMessageComponent["updateContent"]>[0],
-      isStreaming?: boolean,
-    ) {
-      (this as unknown as { hideThinkingBlock: boolean }).hideThinkingBlock = true;
-      original.call(this, message, isStreaming);
-    }),
-    patchMethod(Container.prototype, "render", (original) => function (this: Container, width: number) {
-      return this.children.some((child) => isCompactTrace(child) || isQuietInternal(child) || hasThinking(child))
-        ? renderTraceGroups(this.children, width)
-        : original.call(this, width);
-    }),
-    patchMethod(SessionManager.prototype, "buildContextEntries", (original) => function (this: SessionManager) {
-      return original.call(this).map((entry) =>
-        entry.type === "custom_message" && !entry.display ? { ...entry, display: true } : entry,
-      );
-    }),
-  ];
+  if (patchUsers === 0) {
+    restorePatches = [
+      patchMethod(ToolExecutionComponent.prototype, "render", (original) => function (this: ToolExecutionComponent, width: number) {
+        if ((this as unknown as { hideComponent?: unknown }).hideComponent === true) return original.call(this, width);
+        return renderToolRow(this as unknown as ToolRow, width, currentTheme?.());
+      }),
+      patchMethod(CustomMessageComponent.prototype, "render", () => function (this: CustomMessageComponent, width: number) {
+        return renderCustomRow(this as unknown as CustomRow, width, currentTheme?.());
+      }),
+      patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
+        const lines = original.call(this, width);
+        return lines.every(isBlank) ? [] : lines;
+      }),
+      patchMethod(AssistantMessageComponent.prototype, "setHideThinkingBlock", (original) => function (this: AssistantMessageComponent) {
+        original.call(this, true);
+      }),
+      patchMethod(AssistantMessageComponent.prototype, "updateContent", (original) => function (
+        this: AssistantMessageComponent,
+        message: Parameters<AssistantMessageComponent["updateContent"]>[0],
+        isStreaming?: boolean,
+      ) {
+        (this as unknown as { hideThinkingBlock: boolean }).hideThinkingBlock = true;
+        original.call(this, message, isStreaming);
+      }),
+      patchMethod(Container.prototype, "render", (original) => function (this: Container, width: number) {
+        return this.children.some((child) => isCompactTrace(child) || isQuietInternal(child) || hasThinking(child))
+          ? renderTraceGroups(this.children, width)
+          : original.call(this, width);
+      }),
+      patchMethod(SessionManager.prototype, "buildContextEntries", (original) => function (this: SessionManager) {
+        return original.call(this).map((entry) =>
+          entry.type === "custom_message" && !entry.display ? { ...entry, display: true } : entry,
+        );
+      }),
+    ];
+  }
+  patchUsers++;
 
   pi.on("session_start", (_event, ctx) => {
     resetLiveThinking();
@@ -185,8 +190,12 @@ export default function tinyTools(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", () => {
-    for (const restore of restores.reverse()) restore();
+    patchUsers--;
+    if (patchUsers === 0) {
+      for (const restore of restorePatches!.reverse()) restore();
+      restorePatches = undefined;
+      currentTheme = undefined;
+    }
     resetLiveThinking();
-    currentTheme = undefined;
   });
 }

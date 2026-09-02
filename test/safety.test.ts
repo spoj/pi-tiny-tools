@@ -162,3 +162,34 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.equal(containerPrototype.render, nativeContainerRender);
   assert.equal(SessionManager.prototype.buildContextEntries, nativeBuildContextEntries);
 });
+
+test("duplicate initialization restores shared patches after both shutdowns", () => {
+  initTheme();
+  const toolPrototype = ToolExecutionComponent.prototype as unknown as { render: unknown };
+  const containerPrototype = Container.prototype as unknown as { render: unknown };
+  const nativeToolRender = toolPrototype.render;
+  const nativeContainerRender = containerPrototype.render;
+  const shutdowns: Array<() => void> = [];
+  const pi = {
+    on(name: string, handler: () => void) {
+      if (name === "session_shutdown") shutdowns.push(handler);
+    },
+    registerCommand() {},
+    registerShortcut() {},
+  } as unknown as ExtensionAPI;
+
+  tinyTools(pi);
+  tinyTools(pi);
+
+  assert.equal(shutdowns.length, 2);
+  assert.notEqual(toolPrototype.render, nativeToolRender);
+  assert.notEqual(containerPrototype.render, nativeContainerRender);
+
+  shutdowns[0]!();
+  assert.notEqual(toolPrototype.render, nativeToolRender);
+  assert.notEqual(containerPrototype.render, nativeContainerRender);
+
+  shutdowns[1]!();
+  assert.equal(toolPrototype.render, nativeToolRender);
+  assert.equal(containerPrototype.render, nativeContainerRender);
+});
