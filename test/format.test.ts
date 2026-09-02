@@ -53,6 +53,22 @@ test("strips 7-bit and 8-bit terminal strings while preserving ordinary text", (
   assert.ok(lines.every((line) => !line.includes("\x1b") && !line.includes("\x9d")));
 });
 
+test("styled trace names align after wrapping", () => {
+  const ansiTheme = {
+    fg(_color: string, text: string) {
+      return `\x1b[33m${text}\x1b[39m`;
+    },
+  } as unknown as Theme;
+  const lines = renderTraceGroup([
+    { toolName: "bash" },
+    { toolName: "bash" },
+    { toolName: "bash" },
+  ], 12, ansiTheme);
+
+  assert.deepEqual(lines.map(stripTerminalSequences), [" › bash bash", "   bash"]);
+  assert.ok(lines.every((line) => visibleWidth(line) <= 12));
+});
+
 test("trace names retain their individual colors and use a dim marker", () => {
   const colors: Array<[string, string]> = [];
   const theme = {

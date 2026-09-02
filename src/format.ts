@@ -104,12 +104,16 @@ function prefix(theme?: Theme): string {
   return ` ${bullet} `;
 }
 
+function trimWrappedSeparator(line: string): string {
+  return line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*) /, "$1");
+}
+
 export function renderTraceGroup(rows: TraceRow[], width: number, theme?: Theme): string[] {
   if (rows.length === 0) return [];
   const names = rows.map((row) => theme?.fg(traceColor(row), traceName(row)) ?? traceName(row)).join(" ");
   if (width <= PREFIX_WIDTH) return [truncateToWidth(`${prefix(theme)}${names}`, Math.max(1, width))];
   return wrapTextWithAnsi(names, width - PREFIX_WIDTH).map((line, index) =>
-    `${index === 0 ? prefix(theme) : " ".repeat(PREFIX_WIDTH)}${line}`,
+    `${index === 0 ? prefix(theme) : " ".repeat(PREFIX_WIDTH)}${trimWrappedSeparator(line)}`,
   );
 }
 
