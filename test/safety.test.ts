@@ -7,11 +7,12 @@ import {
   CompactionSummaryMessageComponent,
   CustomMessageComponent,
   initTheme,
+  SessionManager,
   ToolExecutionComponent,
   UserMessageComponent,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer } from "@earendil-works/pi-tui";
+import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import tinyTools from "../src/index.ts";
 
 test("internal traces stay compact and native expansion toggles are shadowed", () => {
@@ -32,10 +33,11 @@ test("internal traces stay compact and native expansion toggles are shadowed", (
   const nativeUpdateContent = assistantPrototype.updateContent;
   const nativeUserRender = userPrototype.render;
   const nativeContainerRender = containerPrototype.render;
-  const handlers = new Map<string, (event?: unknown, ctx?: unknown) => void>();
+  const nativeBuildContextEntries = SessionManager.prototype.buildContextEntries;
+  const handlers = new Map<string, (event?: unknown, ctx?: unknown) => unknown>();
   const shortcuts = new Map<string, () => void>();
   const pi = {
-    on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
+    on(name: string, handler: (event?: unknown, ctx?: unknown) => unknown) {
       handlers.set(name, handler);
     },
     registerCommand() {},
@@ -53,7 +55,20 @@ test("internal traces stay compact and native expansion toggles are shadowed", (
   assert.notEqual(assistantPrototype.updateContent, nativeUpdateContent);
   assert.equal(userPrototype.render, nativeUserRender);
   assert.notEqual(containerPrototype.render, nativeContainerRender);
+  assert.notEqual(SessionManager.prototype.buildContextEntries, nativeBuildContextEntries);
   assert.deepEqual([...shortcuts.keys()], ["ctrl+t", "ctrl+o"]);
+
+  const sessionManager = SessionManager.inMemory();
+  sessionManager.appendCustomMessageEntry("hidden", "secret", false);
+  const renderedEntry = sessionManager.buildContextEntries()[0];
+  assert.equal(renderedEntry?.type === "custom_message" && renderedEntry.display, true);
+  const storedEntry = sessionManager.getEntries()[0];
+  assert.equal(storedEntry?.type === "custom_message" && storedEntry.display, false);
+  assert.deepEqual(handlers.get("message_end")?.({
+    message: { role: "custom", customType: "hidden", content: "secret", display: false, timestamp: 1 },
+  }), {
+    message: { role: "custom", customType: "hidden", content: "secret", display: true, timestamp: 1 },
+  });
 
   let hiddenThinkingLabel = "Thinking...";
   handlers.get("session_start")?.({}, {
@@ -112,10 +127,12 @@ test("internal traces stay compact and native expansion toggles are shadowed", (
     render: () => ["compaction summary"],
   }));
   trace.addChild(new Spacer(1));
+  trace.addChild(new Text("Compaction: 1k tokens billed", 1, 0));
+  trace.addChild(new Spacer(1));
   const customEntry = { entry: { type: "custom" }, render: () => ["custom entry"], invalidate() {} };
   trace.addChild(customEntry);
   trace.addChild(new Spacer(1));
-  trace.addChild({ render: () => ["", "next message"], invalidate() {} });
+  trace.addChild({ render: () => ["next message"], invalidate() {} });
   const second = Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
     toolName: "second",
@@ -144,4 +161,5 @@ test("internal traces stay compact and native expansion toggles are shadowed", (
   assert.equal(Object.hasOwn(CustomMessageComponent.prototype, "render"), false);
   assert.equal(userPrototype.render, nativeUserRender);
   assert.equal(containerPrototype.render, nativeContainerRender);
+  assert.equal(SessionManager.prototype.buildContextEntries, nativeBuildContextEntries);
 });

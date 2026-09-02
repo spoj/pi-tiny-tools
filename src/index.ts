@@ -4,11 +4,13 @@ import {
   BranchSummaryMessageComponent,
   CompactionSummaryMessageComponent,
   CustomMessageComponent,
+  SessionManager,
   ToolExecutionComponent,
   type ExtensionAPI,
+  type SessionEntry,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer } from "@earendil-works/pi-tui";
+import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequences, type CustomRow, type ToolRow, type TraceRow } from "./format.ts";
 import { finishLiveThinking, resetLiveThinking, showTraceInspector, updateLiveThinking } from "./trace-inspector.ts";
 
@@ -24,6 +26,12 @@ type PatchedContainerPrototype = {
   render: Render;
   __piTinyToolsOriginalContainerRender?: Render;
   __piTinyToolsContainerRender?: Render;
+};
+type BuildContextEntries = (this: unknown) => SessionEntry[];
+type PatchedSessionManagerPrototype = {
+  buildContextEntries: BuildContextEntries;
+  __piTinyToolsOriginalBuildContextEntries?: BuildContextEntries;
+  __piTinyToolsBuildContextEntries?: BuildContextEntries;
 };
 type SetHideThinking = (this: unknown, hide: boolean) => void;
 type UpdateAssistant = (this: unknown, message: unknown, isStreaming?: boolean) => void;
@@ -97,7 +105,10 @@ function isQuietInternal(component: unknown): boolean {
     || component instanceof CompactionSummaryMessageComponent
   ) return true;
   const entry = (component as { entry?: { type?: unknown } } | undefined)?.entry;
-  return entry?.type === "custom";
+  if (entry?.type === "custom") return true;
+  if (!(component instanceof Text)) return false;
+  const text = stripTerminalSequences((component as unknown as { text: string }).text);
+  return /^(?:(?:Compaction|Branch summary): .* tokens billed|Cache miss(?: after .*?)?: .* tokens re-billed)/.test(text);
 }
 
 function renderTraceGroups(children: Array<{ render: (width: number) => string[] }>, width: number): string[] {
@@ -117,8 +128,8 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
 
   for (const child of children) {
     if (child instanceof Spacer) {
-      if (skipQuietSpacing) skipQuietSpacing = false;
-      else pendingSpacing.push(...child.render(width));
+      if (!skipQuietSpacing || pendingSpacing.length === 0) pendingSpacing.push(...child.render(width));
+      skipQuietSpacing = false;
       continue;
     }
     if (isCompactTrace(child)) {
@@ -127,7 +138,6 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
       continue;
     }
     if (isQuietInternal(child)) {
-      pendingSpacing = [];
       skipQuietSpacing = true;
       continue;
     }
@@ -180,6 +190,28 @@ function restoreContainer(prototype: PatchedContainerPrototype): void {
   if (original && prototype.render === prototype.__piTinyToolsContainerRender) prototype.render = original;
   delete prototype.__piTinyToolsOriginalContainerRender;
   delete prototype.__piTinyToolsContainerRender;
+}
+
+function patchSessionManager(prototype: PatchedSessionManagerPrototype): void {
+  if (prototype.__piTinyToolsBuildContextEntries) return;
+  const original = prototype.buildContextEntries;
+  const build: BuildContextEntries = function () {
+    return original.call(this).map((entry) =>
+      entry.type === "custom_message" && !entry.display ? { ...entry, display: true } : entry,
+    );
+  };
+  prototype.__piTinyToolsOriginalBuildContextEntries = original;
+  prototype.__piTinyToolsBuildContextEntries = build;
+  prototype.buildContextEntries = build;
+}
+
+function restoreSessionManager(prototype: PatchedSessionManagerPrototype): void {
+  const original = prototype.__piTinyToolsOriginalBuildContextEntries;
+  if (original && prototype.buildContextEntries === prototype.__piTinyToolsBuildContextEntries) {
+    prototype.buildContextEntries = original;
+  }
+  delete prototype.__piTinyToolsOriginalBuildContextEntries;
+  delete prototype.__piTinyToolsBuildContextEntries;
 }
 
 function patchAssistant(prototype: PatchedAssistantPrototype): void {
@@ -246,11 +278,13 @@ export default function tinyTools(pi: ExtensionAPI): void {
   const customPrototype = CustomMessageComponent.prototype as unknown as PatchedPrototype;
   const assistantPrototype = AssistantMessageComponent.prototype as unknown as PatchedAssistantPrototype;
   const containerPrototype = Container.prototype as unknown as PatchedContainerPrototype;
+  const sessionManagerPrototype = SessionManager.prototype as unknown as PatchedSessionManagerPrototype;
 
   patch(toolPrototype, "tool", (row, width, theme) => renderToolRow(row as ToolRow, width, theme));
   patch(customPrototype, "custom", (row, width, theme) => renderCustomRow(row as CustomRow, width, theme));
   patchAssistant(assistantPrototype);
   patchContainer(containerPrototype);
+  patchSessionManager(sessionManagerPrototype);
 
   pi.on("session_start", (_event, ctx) => {
     resetLiveThinking();
@@ -264,6 +298,9 @@ export default function tinyTools(pi: ExtensionAPI): void {
 
   pi.on("message_end", (event) => {
     if (event.message.role === "assistant") finishLiveThinking(event.message);
+    if (event.message.role === "custom" && !event.message.display) {
+      return { message: { ...event.message, display: true } };
+    }
   });
 
   pi.on("session_shutdown", () => {
@@ -271,6 +308,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
     restore(customPrototype, "custom");
     restoreAssistant(assistantPrototype);
     restoreContainer(containerPrototype);
+    restoreSessionManager(sessionManagerPrototype);
     resetLiveThinking();
     currentTheme = undefined;
   });

@@ -9,6 +9,7 @@ export type TraceItem = {
   hidden?: boolean;
   call?: unknown;
   output?: string | unknown[];
+  result?: unknown;
   details?: unknown;
 };
 
@@ -74,7 +75,7 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
             kind: "tool",
             name: part.name,
             status: "pending",
-            call: part.arguments,
+            call: { id: part.id, name: part.name, arguments: part.arguments },
           };
           items.push(item);
           tools.set(part.id, item);
@@ -88,6 +89,14 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
       if (!item) continue;
       item.status = entry.message.isError ? "error" : "success";
       item.output = contentValue(entry.message.content);
+      item.result = {
+        toolCallId: entry.message.toolCallId,
+        toolName: entry.message.toolName,
+        isError: entry.message.isError,
+        timestamp: entry.message.timestamp,
+        ...(entry.message.usage === undefined ? {} : { usage: entry.message.usage }),
+        ...(entry.message.addedToolNames === undefined ? {} : { addedToolNames: entry.message.addedToolNames }),
+      };
       item.details = entry.message.details;
     }
   }
@@ -112,6 +121,7 @@ export function traceContent(item: TraceItem): string[] {
 
   add("CALL", item.call);
   add("OUTPUT", item.output);
+  add("RESULT", item.result);
   add("DETAILS", item.details);
   return lines.length > 0 ? lines : ["No content"];
 }
