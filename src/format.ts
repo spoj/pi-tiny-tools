@@ -37,29 +37,39 @@ export function stripTerminalSequences(text: string): string {
     }
 
     output += text.slice(start, index);
+    let end = index + 1;
     const next = text[index + 1];
     const stringStart = isEscape
       ? next === "]" || next === "P" || next === "^" || next === "_" || next === "X"
       : code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f;
     if (stringStart) {
-      index += isEscape ? 2 : 1;
-      while (index < text.length) {
-        if (text[index] === "\x07" || text.charCodeAt(index) === 0x9c) break;
-        if (text[index] === "\x1b" && text[index + 1] === "\\") {
-          index++;
+      let cursor = index + (isEscape ? 2 : 1);
+      while (cursor < text.length) {
+        if (text[cursor] === "\x07" || text.charCodeAt(cursor) === 0x9c) {
+          cursor++;
           break;
         }
-        index++;
+        if (text[cursor] === "\x1b" && text[cursor + 1] === "\\") {
+          cursor += 2;
+          break;
+        }
+        cursor++;
       }
+      end = cursor;
     } else if ((isEscape && next === "[") || code === 0x9b) {
-      index += isEscape ? 2 : 1;
-      while (index < text.length && !(/[\x40-\x7e]/.test(text[index]!))) index++;
+      let cursor = index + (isEscape ? 2 : 1);
+      while (cursor < text.length && /[\x30-\x3f]/.test(text[cursor]!)) cursor++;
+      while (cursor < text.length && /[\x20-\x2f]/.test(text[cursor]!)) cursor++;
+      if (cursor < text.length && /[\x40-\x7e]/.test(text[cursor]!)) cursor++;
+      end = cursor;
     } else if (isEscape) {
-      index++;
-      while (index < text.length && /[\x20-\x2f]/.test(text[index]!)) index++;
-      if (index >= text.length || !(/[\x30-\x7e]/.test(text[index]!))) index--;
+      let cursor = index + 1;
+      while (cursor < text.length && /[\x20-\x2f]/.test(text[cursor]!)) cursor++;
+      if (cursor < text.length && /[\x30-\x7e]/.test(text[cursor]!)) cursor++;
+      end = cursor;
     }
-    start = index + 1;
+    start = end;
+    index = end - 1;
   }
 
   return output + text.slice(start);

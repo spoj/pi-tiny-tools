@@ -38,6 +38,8 @@ test("strips 7-bit and 8-bit terminal strings while preserving ordinary text", (
   assert.equal(stripTerminalSequences("a\x1bcB"), "aB");
   assert.equal(stripTerminalSequences("a\x1b\nB"), "a\nB");
   assert.equal(stripTerminalSequences("a\x1b🙂B"), "a🙂B");
+  assert.equal(stripTerminalSequences("a\x1b[\nBz"), "a\nBz");
+  assert.equal(stripTerminalSequences("a\x9b🙂Bz"), "a🙂Bz");
   assert.equal(stripTerminalSequences("a\x07b\rc\bd"), "abcd");
   assert.equal(stripTerminalSequences(text), "before\n\tafterdcsapcosc");
 
