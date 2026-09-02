@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, type TUI } from "@earendil-works/pi-tui";
-import { extractTraceItems, TraceInspector, traceContent } from "../src/trace-inspector.ts";
+import { ellipsizeId, extractTraceItems, TraceInspector, traceContent } from "../src/trace-inspector.ts";
 
 const base = { parentId: null, timestamp: "2026-01-01T00:00:00.000Z" };
 
@@ -77,6 +77,11 @@ function fakeTui(rows = 14): TUI & { renders: number } {
   };
   return tui as unknown as TUI & { renders: number };
 }
+
+test("ellipsizes long ids while retaining both distinguishing ends", () => {
+  assert.equal(ellipsizeId("short-id"), "short-id");
+  assert.equal(ellipsizeId("call_1234567890abcdef"), "call_…cdef");
+});
 
 test("extracts tool calls, pairs results by id, and includes hidden custom messages", () => {
   const items = extractTraceItems(entries());

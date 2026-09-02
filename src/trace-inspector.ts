@@ -13,6 +13,10 @@ export type TraceItem = {
   details?: unknown;
 };
 
+export function ellipsizeId(id: string): string {
+  return id.length <= 10 ? id : `${id.slice(0, 5)}…${id.slice(-4)}`;
+}
+
 function contentValue(content: unknown): string | unknown[] | undefined {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return undefined;
@@ -75,7 +79,7 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
             kind: "tool",
             name: part.name,
             status: "pending",
-            call: { id: part.id, name: part.name, arguments: part.arguments },
+            call: { id: ellipsizeId(part.id), name: part.name, arguments: part.arguments },
           };
           items.push(item);
           tools.set(part.id, item);
@@ -90,7 +94,7 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
       item.status = entry.message.isError ? "error" : "success";
       item.output = contentValue(entry.message.content);
       item.result = {
-        toolCallId: entry.message.toolCallId,
+        toolCallId: ellipsizeId(entry.message.toolCallId),
         toolName: entry.message.toolName,
         isError: entry.message.isError,
         timestamp: entry.message.timestamp,
