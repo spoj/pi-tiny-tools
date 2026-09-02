@@ -36,6 +36,9 @@ test("trace names strip terminal control sequences before styling", () => {
 test("strips 7-bit and 8-bit terminal strings while preserving ordinary text", () => {
   const text = "before\n\t" + "\x1bc" + "after" + "\x1bPsecret\x1b\\" + "dcs" + "\x1b_secret\x1b\\" + "apc" + "\x9d52;c;secret\x9c" + "osc" + "\x9dunterminated";
   assert.equal(stripTerminalSequences("a\x1bcB"), "aB");
+  assert.equal(stripTerminalSequences("a\x1b\nB"), "a\nB");
+  assert.equal(stripTerminalSequences("a\x1b🙂B"), "a🙂B");
+  assert.equal(stripTerminalSequences("a\x07b\rc\bd"), "abcd");
   assert.equal(stripTerminalSequences(text), "before\n\tafterdcsapcosc");
 
   const lines = renderTraceGroup([

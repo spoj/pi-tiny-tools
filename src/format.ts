@@ -26,9 +26,17 @@ export function stripTerminalSequences(text: string): string {
   for (let index = 0; index < text.length; index++) {
     const code = text.charCodeAt(index);
     const isEscape = text[index] === "\x1b";
-    if (!isEscape && (code < 0x80 || code > 0x9f)) continue;
-    output += text.slice(start, index);
+    const isC0 = code < 0x20 || code === 0x7f;
+    const isC1 = code >= 0x80 && code <= 0x9f;
+    if (!isEscape && !isC0 && !isC1) continue;
+    if (!isEscape && isC0) {
+      output += text.slice(start, index);
+      if (code === 0x09 || code === 0x0a) output += text[index];
+      start = index + 1;
+      continue;
+    }
 
+    output += text.slice(start, index);
     const next = text[index + 1];
     const stringStart = isEscape
       ? next === "]" || next === "P" || next === "^" || next === "_" || next === "X"
@@ -49,6 +57,7 @@ export function stripTerminalSequences(text: string): string {
     } else if (isEscape) {
       index++;
       while (index < text.length && /[\x20-\x2f]/.test(text[index]!)) index++;
+      if (index >= text.length || !(/[\x30-\x7e]/.test(text[index]!))) index--;
     }
     start = index + 1;
   }
