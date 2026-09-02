@@ -15,7 +15,13 @@ export type ThinkingRow = {
   traceKind: "thinking";
 };
 
-export type TraceRow = ToolRow | CustomRow | ThinkingRow;
+export type NamedRow = {
+  traceKind: "named";
+  name: string;
+  color: "accent" | "success" | "error" | "customMessageLabel";
+};
+
+export type TraceRow = ToolRow | CustomRow | ThinkingRow | NamedRow;
 
 const PREFIX_WIDTH = 3;
 
@@ -79,12 +85,17 @@ function isThinkingRow(row: TraceRow): row is ThinkingRow {
   return "traceKind" in row && row.traceKind === "thinking";
 }
 
+function isNamedRow(row: TraceRow): row is NamedRow {
+  return "traceKind" in row && row.traceKind === "named";
+}
+
 function isCustomRow(row: TraceRow): row is CustomRow {
   return "message" in row;
 }
 
 function traceName(row: TraceRow): string {
   if (isThinkingRow(row)) return "think";
+  if (isNamedRow(row)) return stripTerminalSequences(row.name);
   if (isCustomRow(row)) {
     const name = typeof row.message?.customType === "string" && row.message.customType ? row.message.customType : "extension";
     return stripTerminalSequences(name);
@@ -95,6 +106,7 @@ function traceName(row: TraceRow): string {
 
 function traceColor(row: TraceRow): "accent" | "success" | "error" | "customMessageLabel" | "thinkingText" {
   if (isThinkingRow(row)) return "thinkingText";
+  if (isNamedRow(row)) return row.color;
   if (isCustomRow(row)) return "customMessageLabel";
   return row.result?.isError ? "error" : row.result && row.isPartial !== true ? "success" : "accent";
 }

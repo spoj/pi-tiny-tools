@@ -8,6 +8,7 @@ import {
   CustomMessageComponent,
   initTheme,
   SessionManager,
+  SkillInvocationMessageComponent,
   ToolExecutionComponent,
   UserMessageComponent,
   type ExtensionAPI,
@@ -18,6 +19,7 @@ import tinyTools from "../src/index.ts";
 test("internal traces stay compact while native expansion state changes", () => {
   initTheme();
   const toolPrototype = ToolExecutionComponent.prototype as unknown as { render: unknown };
+  const bashPrototype = BashExecutionComponent.prototype;
   const customPrototype = CustomMessageComponent.prototype as unknown as { render: unknown };
   const assistantPrototype = AssistantMessageComponent.prototype as unknown as {
     render: (this: unknown, width: number) => string[];
@@ -27,6 +29,8 @@ test("internal traces stay compact while native expansion state changes", () => 
   const userPrototype = UserMessageComponent.prototype as unknown as { render: unknown };
   const containerPrototype = Container.prototype as unknown as { render: unknown };
   const nativeToolRender = toolPrototype.render;
+  const nativeBashAppendOutput = bashPrototype.appendOutput;
+  const nativeBashSetComplete = bashPrototype.setComplete;
   const nativeCustomRender = customPrototype.render;
   const nativeAssistantRender = assistantPrototype.render;
   const nativeSetHideThinking = assistantPrototype.setHideThinkingBlock;
@@ -49,6 +53,8 @@ test("internal traces stay compact while native expansion state changes", () => 
   tinyTools(pi);
 
   assert.notEqual(toolPrototype.render, nativeToolRender);
+  assert.notEqual(bashPrototype.appendOutput, nativeBashAppendOutput);
+  assert.notEqual(bashPrototype.setComplete, nativeBashSetComplete);
   assert.notEqual(customPrototype.render, nativeCustomRender);
   assert.notEqual(assistantPrototype.render, nativeAssistantRender);
   assert.notEqual(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
@@ -153,7 +159,15 @@ test("internal traces stay compact while native expansion state changes", () => 
   }));
   trace.addChild(new Spacer(1));
   trace.addChild(Object.assign(Object.create(BashExecutionComponent.prototype), {
+    tinyToolsShellMarker: "!",
+    status: "complete",
     render: () => ["user bash output"],
+  }));
+  trace.addChild(new Spacer(1));
+  trace.addChild(Object.assign(Object.create(BashExecutionComponent.prototype), {
+    tinyToolsShellMarker: "!!",
+    status: "error",
+    render: () => ["excluded bash output"],
   }));
   trace.addChild(new Spacer(1));
   trace.addChild(Object.assign(Object.create(BranchSummaryMessageComponent.prototype), {
@@ -166,8 +180,13 @@ test("internal traces stay compact while native expansion state changes", () => 
   trace.addChild(new Spacer(1));
   trace.addChild(new Text("Compaction: 1k tokens billed", 1, 0));
   trace.addChild(new Spacer(1));
-  const customEntry = { entry: { type: "custom" }, render: () => ["custom entry"], invalidate() {} };
+  const customEntry = { entry: { type: "custom", customType: "state" }, render: () => ["custom entry"], invalidate() {} };
   trace.addChild(customEntry);
+  trace.addChild(new Spacer(1));
+  trace.addChild(Object.assign(Object.create(SkillInvocationMessageComponent.prototype), {
+    skillBlock: { name: "review" },
+    render: () => ["full skill"],
+  }));
   trace.addChild(new Spacer(1));
   trace.addChild({ render: () => ["next message"], invalidate() {} });
   const second = Object.assign(Object.create(ToolExecutionComponent.prototype), {
@@ -177,8 +196,13 @@ test("internal traces stay compact while native expansion state changes", () => 
   });
   trace.addChild(second);
 
-  const compact = [" › think tool tool2 custom-name", "", "next message", "", " › second"];
+  const compact = [" › think tool tool2 custom-name ! !! branch summary compaction state review", "", "next message", "", " › second"];
   assert.deepEqual(trace.render(80), compact);
+
+  const billing = new Container();
+  billing.addChild(new Text("Compaction: 1k tokens billed", 1, 0));
+  billing.addChild(new Spacer(1));
+  assert.deepEqual(billing.render(80), []);
 
   tool.expanded = true;
   tool2.expanded = true;
@@ -190,6 +214,8 @@ test("internal traces stay compact while native expansion state changes", () => 
   handlers.get("session_shutdown")?.();
 
   assert.equal(toolPrototype.render, nativeToolRender);
+  assert.equal(bashPrototype.appendOutput, nativeBashAppendOutput);
+  assert.equal(bashPrototype.setComplete, nativeBashSetComplete);
   assert.equal(customPrototype.render, nativeCustomRender);
   assert.equal(assistantPrototype.render, nativeAssistantRender);
   assert.equal(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);

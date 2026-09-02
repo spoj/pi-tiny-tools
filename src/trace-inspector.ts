@@ -1,10 +1,10 @@
-import type { ExtensionContext, SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
+import { parseSkillBlock, type ExtensionContext, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
 import { stripTerminalSequences } from "./format.ts";
 
 export type TraceItem = {
   id: string;
-  kind: "tool" | "custom" | "thinking";
+  kind: "tool" | "custom" | "thinking" | "shell" | "summary" | "entry" | "skill";
   name: string;
   status: "pending" | "success" | "error";
   hidden?: boolean;
@@ -36,6 +36,39 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
   const tools = new Map<string, TraceItem>();
 
   for (const entry of entries) {
+    if (entry.type === "compaction") {
+      items.push({
+        id: entry.id,
+        kind: "summary",
+        name: "compaction",
+        status: "success",
+        details: entry,
+      });
+      continue;
+    }
+
+    if (entry.type === "branch_summary") {
+      items.push({
+        id: entry.id,
+        kind: "summary",
+        name: "branch summary",
+        status: "success",
+        details: entry,
+      });
+      continue;
+    }
+
+    if (entry.type === "custom") {
+      items.push({
+        id: entry.id,
+        kind: "entry",
+        name: entry.customType,
+        status: "success",
+        details: entry,
+      });
+      continue;
+    }
+
     if (entry.type === "custom_message") {
       items.push({
         id: entry.id,
@@ -50,6 +83,35 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
     }
 
     if (entry.type !== "message") continue;
+    if (entry.message.role === "user") {
+      const content = typeof entry.message.content === "string"
+        ? entry.message.content
+        : entry.message.content.filter((part) => part.type === "text").map((part) => part.text).join("");
+      const skill = parseSkillBlock(content);
+      if (skill) {
+        items.push({
+          id: `${entry.id}:skill`,
+          kind: "skill",
+          name: skill.name,
+          status: "success",
+          call: { name: skill.name, location: skill.location },
+          output: skill.content,
+        });
+      }
+      continue;
+    }
+
+    if (entry.message.role === "bashExecution") {
+      items.push({
+        id: entry.id,
+        kind: "shell",
+        name: entry.message.excludeFromContext ? "!!" : "!",
+        status: entry.message.cancelled || (entry.message.exitCode !== undefined && entry.message.exitCode !== 0) ? "error" : "success",
+        details: entry,
+      });
+      continue;
+    }
+
     if (entry.message.role === "assistant") {
       for (let index = 0; index < entry.message.content.length; index++) {
         const part = entry.message.content[index]!;
@@ -350,7 +412,7 @@ export async function showTraceInspector(ctx: ExtensionContext): Promise<void> {
     else if (items[index]!.status === "pending") items[index] = item;
   }
   if (items.length === 0) {
-    ctx.ui.notify("No tools, thinking, or custom messages in the current branch", "info");
+    ctx.ui.notify("No traceable items in the current branch", "info");
     return;
   }
 

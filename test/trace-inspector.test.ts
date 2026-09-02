@@ -137,6 +137,100 @@ test("extracts tool calls, pairs results by id, and includes hidden custom messa
   ]);
 });
 
+test("extracts minimized shell, summary, custom entry, and skill items", () => {
+  const items = extractTraceItems([
+    {
+      ...base,
+      type: "message",
+      id: "shell",
+      message: {
+        role: "bashExecution",
+        command: "pwd",
+        output: "/tmp",
+        exitCode: 0,
+        cancelled: false,
+        truncated: false,
+        excludeFromContext: true,
+        timestamp: 1,
+      },
+    },
+    {
+      ...base,
+      type: "message",
+      id: "shell-visible",
+      message: {
+        role: "bashExecution",
+        command: "printf ok",
+        output: "ok",
+        exitCode: 0,
+        cancelled: false,
+        truncated: false,
+        excludeFromContext: false,
+        timestamp: 1,
+      },
+    },
+    {
+      ...base,
+      type: "compaction",
+      id: "compaction",
+      summary: "Earlier work",
+      firstKeptEntryId: "shell",
+      tokensBefore: 1000,
+    },
+    {
+      ...base,
+      type: "branch_summary",
+      id: "branch",
+      fromId: "shell",
+      summary: "Other approach",
+    },
+    {
+      ...base,
+      type: "custom",
+      id: "state",
+      customType: "todo-state",
+      data: { count: 2 },
+    },
+    {
+      ...base,
+      type: "model_change",
+      id: "model",
+      provider: "test",
+      modelId: "model",
+    },
+    {
+      ...base,
+      type: "thinking_level_change",
+      id: "thinking-level",
+      thinkingLevel: "high",
+    },
+    {
+      ...base,
+      type: "label",
+      id: "label",
+      targetId: "state",
+      label: "checkpoint",
+    },
+    {
+      ...base,
+      type: "session_info",
+      id: "session-info",
+      name: "session",
+    },
+  ] as SessionEntry[]);
+
+  assert.deepEqual(items.map(({ kind, name, status }) => ({ kind, name, status })), [
+    { kind: "shell", name: "!!", status: "success" },
+    { kind: "shell", name: "!", status: "success" },
+    { kind: "summary", name: "compaction", status: "success" },
+    { kind: "summary", name: "branch summary", status: "success" },
+    { kind: "entry", name: "todo-state", status: "success" },
+  ]);
+  assert.ok(traceContent(items[0]!).some((line) => line.includes('"command": "pwd"')));
+  assert.ok(traceContent(items[2]!).some((line) => line.includes('"summary": "Earlier work"')));
+  assert.ok(traceContent(items[4]!).some((line) => line.includes('"count": 2')));
+});
+
 test("marks tool calls from aborted and failed assistant messages as errors", () => {
   const items = extractTraceItems([
     {

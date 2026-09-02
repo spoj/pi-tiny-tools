@@ -6,23 +6,22 @@ A small [Pi](https://github.com/earendil-works/pi-mono) extension that reduces P
  › think read bash pi-subagents think edit write
 ```
 
-The default transcript is quiet:
+The transcript has three visibility levels:
 
-- User and assistant messages render normally.
-- Tool activity, thinking, and custom messages render only as compact trace names.
-- Other persisted internal entries, including user-shell output, custom entries, compaction summaries, and branch summaries, are hidden.
-- Model and thinking-level changes remain silent.
+- **Full:** user messages, assistant messages, and assistant error notices.
+- **Minimized and traceable:** thinking, tools, skill invocations, custom messages, custom entries, `!` and `!!` shell executions, compactions, and branch summaries. These render as compact names and retain their full content in `/trace`.
+- **Silent:** model changes, thinking-level changes, and billing notices. These add no transcript item.
 
 Internal names share one layout and flow onto indented continuation lines when needed. Thinking uses Pi's native thinking color. Compact traces have one leading blank line and no blank rows between items.
 
-Run `/trace` or press `Alt+T` to inspect thinking, calls, results, and visible or hidden custom messages from the current session branch in a Pi overlay. It opens on the newest item and follows new thinking, tool calls, and tool output while they stream. Pi's native `Ctrl+T` and `Ctrl+O` toggles remain available; their display effects are intentionally invisible while the compact trace renderer is active.
+Run `/trace` or press `Alt+T` to inspect minimized items from the current session branch in a Pi overlay. It opens on the newest item and follows new thinking, tool calls, and tool output while they stream. Pi's native `Ctrl+T` and `Ctrl+O` toggles remain available; their display effects are intentionally invisible while the compact trace renderer is active.
 
 - `j` / `k`: next / previous item
 - `PageDown` / `PageUp` or `Ctrl+D` / `Ctrl+U`: scroll the current item
 - `g` / `G`: top / bottom
 - `Esc`: close
 
-The inspector shows the complete data retained in the session. It cannot recover output that a tool discarded before returning; when a tool truncates output, its stored result and truncation details are shown.
+The inspector shows the complete retained content for traceable items. It cannot recover output that a tool discarded before returning; when a tool truncates output, its stored result and truncation details are shown.
 
 ## Install
 
@@ -38,7 +37,7 @@ pi -e .
 
 ## Scope
 
-The extension patches Pi's `ToolExecutionComponent`, `CustomMessageComponent`, and `AssistantMessageComponent` rendering. One tool-row patch covers built-in, extension, and MCP tools. Custom messages use their `customType` as the colored name, including after session reload.
+The extension patches Pi's transcript components and container rendering. One tool-row patch covers built-in, extension, and MCP tools. Custom messages use their `customType` as the colored name, including after session reload.
 
 This uses private component state (tool data, custom-message data, and assistant message data) and may need an update when Pi changes those components.
 

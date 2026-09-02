@@ -5,6 +5,7 @@ import {
   CompactionSummaryMessageComponent,
   CustomMessageComponent,
   SessionManager,
+  SkillInvocationMessageComponent,
   ToolExecutionComponent,
   type ExtensionAPI,
   type Theme,
@@ -51,8 +52,65 @@ function isCompactTool(component: unknown): component is ToolExecutionComponent 
     && (component as unknown as { hideComponent?: unknown }).hideComponent !== true;
 }
 
+type ShellComponent = {
+  command: string;
+  contentContainer: { children: unknown[] };
+  status: "running" | "complete" | "cancelled" | "error";
+  tinyToolsShellMarker?: "!" | "!!";
+};
+
+function shellMarker(component: ShellComponent): "!" | "!!" {
+  if (component.tinyToolsShellMarker) return component.tinyToolsShellMarker;
+  const header = component.contentContainer.children[0] as { text?: unknown } | undefined;
+  const theme = currentTheme?.();
+  return theme && header?.text === theme.fg("dim", theme.bold(`$ ${component.command}`)) ? "!!" : "!";
+}
+
+function rememberShellMarker(component: BashExecutionComponent): void {
+  const shell = component as unknown as ShellComponent;
+  shell.tinyToolsShellMarker = shellMarker(shell);
+}
+
+function customEntry(component: unknown): { customType?: unknown } | undefined {
+  const entry = (component as { entry?: { type?: unknown; customType?: unknown } } | undefined)?.entry;
+  return entry?.type === "custom" ? entry : undefined;
+}
+
 function isCompactTrace(component: unknown): boolean {
-  return isCompactTool(component) || component instanceof CustomMessageComponent;
+  return isCompactTool(component)
+    || component instanceof CustomMessageComponent
+    || component instanceof BashExecutionComponent
+    || component instanceof BranchSummaryMessageComponent
+    || component instanceof CompactionSummaryMessageComponent
+    || component instanceof SkillInvocationMessageComponent
+    || customEntry(component) !== undefined;
+}
+
+function compactTraceRow(component: unknown): TraceRow {
+  if (component instanceof BashExecutionComponent) {
+    const shell = component as unknown as ShellComponent;
+    return {
+      traceKind: "named",
+      name: shellMarker(shell),
+      color: shell.status === "running" ? "accent" : shell.status === "complete" ? "success" : "error",
+    };
+  }
+  if (component instanceof BranchSummaryMessageComponent) {
+    return { traceKind: "named", name: "branch summary", color: "customMessageLabel" };
+  }
+  if (component instanceof CompactionSummaryMessageComponent) {
+    return { traceKind: "named", name: "compaction", color: "customMessageLabel" };
+  }
+  if (component instanceof SkillInvocationMessageComponent) {
+    const skill = component as unknown as { skillBlock: { name: string } };
+    return { traceKind: "named", name: skill.skillBlock.name, color: "customMessageLabel" };
+  }
+  const entry = customEntry(component);
+  if (entry) {
+    const name = typeof entry.customType === "string" && entry.customType ? entry.customType : "extension";
+    return { traceKind: "named", name, color: "customMessageLabel" };
+  }
+  return component as TraceRow;
 }
 
 function hasThinking(component: unknown): boolean {
@@ -62,13 +120,6 @@ function hasThinking(component: unknown): boolean {
 }
 
 function isQuietInternal(component: unknown): boolean {
-  if (
-    component instanceof BashExecutionComponent
-    || component instanceof BranchSummaryMessageComponent
-    || component instanceof CompactionSummaryMessageComponent
-  ) return true;
-  const entry = (component as { entry?: { type?: unknown } } | undefined)?.entry;
-  if (entry?.type === "custom") return true;
   if (!(component instanceof Text)) return false;
   const text = stripTerminalSequences((component as unknown as { text: string }).text);
   return /^(?:(?:Compaction|Branch summary): .* tokens billed|Cache miss(?: after .*?)?: .* tokens re-billed)/.test(text);
@@ -79,6 +130,7 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
   const traces: TraceRow[] = [];
   let pendingSpacing: string[] = [];
   let skipQuietSpacing = false;
+  let quietTail = false;
   let previous: "content" | "trace" | undefined;
 
   const flushTraces = (): void => {
@@ -91,19 +143,24 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
 
   for (const child of children) {
     if (child instanceof Spacer) {
-      if (!skipQuietSpacing || pendingSpacing.length === 0) pendingSpacing.push(...child.render(width));
-      skipQuietSpacing = false;
+      if (!skipQuietSpacing) pendingSpacing.push(...child.render(width));
       continue;
     }
     if (isCompactTrace(child)) {
-      traces.push(child as unknown as TraceRow);
+      traces.push(compactTraceRow(child));
       pendingSpacing = [];
+      skipQuietSpacing = false;
+      quietTail = false;
       continue;
     }
     if (isQuietInternal(child)) {
       skipQuietSpacing = true;
+      quietTail = true;
       continue;
     }
+
+    skipQuietSpacing = false;
+    quietTail = false;
     if (hasThinking(child)) {
       traces.push({ traceKind: "thinking" });
       pendingSpacing = [];
@@ -117,7 +174,6 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
       continue;
     }
 
-    skipQuietSpacing = false;
     const lines = child.render(width);
     if (lines.length === 0) {
       pendingSpacing.push(...lines);
@@ -131,12 +187,12 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
   }
 
   flushTraces();
-  return [...output, ...pendingSpacing];
+  return quietTail ? output : [...output, ...pendingSpacing];
 }
 
 export default function tinyTools(pi: ExtensionAPI): void {
   pi.registerCommand("trace", {
-    description: "Inspect tools, thinking, and custom messages",
+    description: "Inspect minimized transcript items",
     handler: async (_args, ctx) => showTraceInspector(ctx),
   });
   pi.registerShortcut("alt+t", {
@@ -146,6 +202,20 @@ export default function tinyTools(pi: ExtensionAPI): void {
 
   if (patchUsers === 0) {
     restorePatches = [
+      patchMethod(BashExecutionComponent.prototype, "appendOutput", (original) => function (
+        this: BashExecutionComponent,
+        chunk: string,
+      ) {
+        rememberShellMarker(this);
+        original.call(this, chunk);
+      }),
+      patchMethod(BashExecutionComponent.prototype, "setComplete", (original) => function (
+        this: BashExecutionComponent,
+        ...args: Parameters<BashExecutionComponent["setComplete"]>
+      ) {
+        rememberShellMarker(this);
+        original.apply(this, args);
+      }),
       patchMethod(ToolExecutionComponent.prototype, "render", (original) => function (this: ToolExecutionComponent, width: number) {
         if ((this as unknown as { hideComponent?: unknown }).hideComponent === true) return original.call(this, width);
         return renderToolRow(this as unknown as ToolRow, width, currentTheme?.());
