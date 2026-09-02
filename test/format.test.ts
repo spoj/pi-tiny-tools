@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { renderCustomRow, renderToolRow, renderTraceGroup } from "../src/format.ts";
+import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequences } from "../src/format.ts";
 
 test("tool and custom rows show only their names", () => {
   assert.deepEqual(renderToolRow({ toolName: "read", result: { isError: false } }, 40), [" › read"]);
@@ -31,6 +31,21 @@ test("trace names strip terminal control sequences before styling", () => {
 
   assert.deepEqual(lines, [" › tool malicious"]);
   assert.ok(lines.every((line) => !line.includes("\x1b")));
+});
+
+test("strips 7-bit and 8-bit terminal strings while preserving ordinary text", () => {
+  const text = "before\n\t" + "\x1bc" + "after" + "\x1bPsecret\x1b\\" + "dcs" + "\x1b_secret\x1b\\" + "apc" + "\x9d52;c;secret\x9c" + "osc" + "\x9dunterminated";
+  assert.equal(stripTerminalSequences("a\x1bcB"), "aB");
+  assert.equal(stripTerminalSequences(text), "before\n\tafterdcsapcosc");
+
+  const lines = renderTraceGroup([
+    { toolName: "reset\x1bc" },
+    { message: { customType: "dcs\x1bPsecret\x1b\\" } },
+    { toolName: "apc\x1b_secret\x1b\\" },
+    { message: { customType: "osc\x9dsecret\x9c" } },
+  ], 80);
+  assert.deepEqual(lines, [" › reset dcs apc osc"]);
+  assert.ok(lines.every((line) => !line.includes("\x1b") && !line.includes("\x9d")));
 });
 
 test("trace names retain their individual colors and use a dim marker", () => {

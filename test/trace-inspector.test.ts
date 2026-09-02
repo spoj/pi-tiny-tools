@@ -207,7 +207,7 @@ test("inspector strips terminal control sequences from content", () => {
       kind: "custom",
       name: "custom\x1b[2J",
       status: "success",
-      output: "output\x1b]52;c;secret\x07",
+      output: "output\x1b]52;c;secret\x07\x9dunterminated",
       details: "details\x1b[2J",
     },
   ], theme, fakeTui(), () => {});
@@ -221,7 +221,7 @@ test("inspector strips terminal control sequences from content", () => {
     kind: "custom",
     name: "custom\x1b[2J",
     status: "success",
-    output: "output\x1b]52;c;secret\x07",
+    output: "output\x1b]52;c;secret\x07\x9dunterminated",
     details: "details\x1b[2J",
   }).every((line) => !line.includes("\x1b")));
   assert.ok(lines.slice(3, 9).every((line) => !line.includes("\x1b")));

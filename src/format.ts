@@ -20,7 +20,40 @@ export type TraceRow = ToolRow | CustomRow | ThinkingRow;
 const PREFIX_WIDTH = 3;
 
 export function stripTerminalSequences(text: string): string {
-  return text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+  let output = "";
+  let start = 0;
+
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    const isEscape = text[index] === "\x1b";
+    if (!isEscape && (code < 0x80 || code > 0x9f)) continue;
+    output += text.slice(start, index);
+
+    const next = text[index + 1];
+    const stringStart = isEscape
+      ? next === "]" || next === "P" || next === "^" || next === "_" || next === "X"
+      : code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f;
+    if (stringStart) {
+      index += isEscape ? 2 : 1;
+      while (index < text.length) {
+        if (text[index] === "\x07" || text.charCodeAt(index) === 0x9c) break;
+        if (text[index] === "\x1b" && text[index + 1] === "\\") {
+          index++;
+          break;
+        }
+        index++;
+      }
+    } else if ((isEscape && next === "[") || code === 0x9b) {
+      index += isEscape ? 2 : 1;
+      while (index < text.length && !(/[\x40-\x7e]/.test(text[index]!))) index++;
+    } else if (isEscape) {
+      index++;
+      while (index < text.length && /[\x20-\x2f]/.test(text[index]!)) index++;
+    }
+    start = index + 1;
+  }
+
+  return output + text.slice(start);
 }
 
 function isThinkingRow(row: TraceRow): row is ThinkingRow {
