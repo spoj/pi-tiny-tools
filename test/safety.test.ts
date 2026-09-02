@@ -58,6 +58,10 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.notEqual(SessionManager.prototype.buildContextEntries, nativeBuildContextEntries);
   assert.deepEqual([...shortcuts.keys()], ["alt+t"]);
 
+  handlers.get("session_start")?.({}, {
+    mode: "tui",
+    ui: { setHiddenThinkingLabel() {} },
+  });
   const sessionManager = SessionManager.inMemory();
   sessionManager.appendCustomMessageEntry("hidden", "secret", false);
   const renderedEntry = sessionManager.buildContextEntries()[0];
@@ -78,14 +82,16 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.equal(handlers.get("message_end")?.({
     message: { role: "custom", customType: "hidden", content: "secret", display: false, timestamp: 1 },
   }, { mode: "print" }), undefined);
-  assert.equal(sessionManager.buildContextEntries()[0]?.type === "custom_message" && sessionManager.buildContextEntries()[0].display, false);
+  const printEntry = sessionManager.buildContextEntries()[0];
+  assert.equal(printEntry?.type === "custom_message" && printEntry.display, false);
   handlers.get("session_start")?.({}, {
     mode: "tui",
     ui: {
       setHiddenThinkingLabel() {},
     },
   });
-  assert.equal(sessionManager.buildContextEntries()[0]?.type === "custom_message" && sessionManager.buildContextEntries()[0].display, true);
+  const tuiEntry = sessionManager.buildContextEntries()[0];
+  assert.equal(tuiEntry?.type === "custom_message" && tuiEntry.display, true);
 
   let hiddenThinkingLabel = "Thinking...";
   handlers.get("session_start")?.({}, {
