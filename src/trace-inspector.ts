@@ -75,7 +75,7 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
             id: part.id,
             kind: "tool",
             name: part.name,
-            status: "pending",
+            status: entry.message.stopReason === "aborted" || entry.message.stopReason === "error" ? "error" : "pending",
             call: { id: ellipsizeId(part.id), name: part.name, arguments: part.arguments },
           };
           items.push(item);

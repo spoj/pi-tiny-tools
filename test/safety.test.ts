@@ -66,12 +66,30 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.equal(storedEntry?.type === "custom_message" && storedEntry.display, false);
   assert.deepEqual(handlers.get("message_end")?.({
     message: { role: "custom", customType: "hidden", content: "secret", display: false, timestamp: 1 },
-  }), {
+  }, { mode: "tui" }), {
     message: { role: "custom", customType: "hidden", content: "secret", display: true, timestamp: 1 },
   });
+  handlers.get("session_start")?.({}, {
+    mode: "print",
+    ui: {
+      setHiddenThinkingLabel() {},
+    },
+  });
+  assert.equal(handlers.get("message_end")?.({
+    message: { role: "custom", customType: "hidden", content: "secret", display: false, timestamp: 1 },
+  }, { mode: "print" }), undefined);
+  assert.equal(sessionManager.buildContextEntries()[0]?.type === "custom_message" && sessionManager.buildContextEntries()[0].display, false);
+  handlers.get("session_start")?.({}, {
+    mode: "tui",
+    ui: {
+      setHiddenThinkingLabel() {},
+    },
+  });
+  assert.equal(sessionManager.buildContextEntries()[0]?.type === "custom_message" && sessionManager.buildContextEntries()[0].display, true);
 
   let hiddenThinkingLabel = "Thinking...";
   handlers.get("session_start")?.({}, {
+    mode: "tui",
     ui: {
       setHiddenThinkingLabel: (label: string) => { hiddenThinkingLabel = label; },
     },

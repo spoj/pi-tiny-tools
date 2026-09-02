@@ -137,6 +137,36 @@ test("extracts tool calls, pairs results by id, and includes hidden custom messa
   ]);
 });
 
+test("marks tool calls from aborted and failed assistant messages as errors", () => {
+  const items = extractTraceItems([
+    {
+      ...base,
+      type: "message",
+      id: "aborted",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "aborted-call", name: "read", arguments: {} }],
+        stopReason: "aborted",
+      },
+    },
+    {
+      ...base,
+      type: "message",
+      id: "failed",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "failed-call", name: "bash", arguments: {} }],
+        stopReason: "error",
+      },
+    },
+  ] as SessionEntry[]);
+
+  assert.deepEqual(items.map(({ id, status }) => ({ id, status })), [
+    { id: "aborted-call", status: "error" },
+    { id: "failed-call", status: "error" },
+  ]);
+});
+
 test("formats all persisted sections", () => {
   assert.deepEqual(traceContent(extractTraceItems(entries())[0]!), [
     "CALL",

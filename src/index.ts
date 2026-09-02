@@ -14,6 +14,7 @@ import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequence
 import { finishLiveThinking, resetLiveThinking, showTraceInspector, updateLiveThinking } from "./trace-inspector.ts";
 
 let currentTheme: (() => Theme | undefined) | undefined;
+let tuiMode = false;
 let patchUsers = 0;
 let restorePatches: (() => void)[] | undefined;
 
@@ -165,7 +166,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
       }),
       patchMethod(SessionManager.prototype, "buildContextEntries", (original) => function (this: SessionManager) {
         return original.call(this).map((entry) =>
-          entry.type === "custom_message" && !entry.display ? { ...entry, display: true } : entry,
+          entry.type === "custom_message" && tuiMode && !entry.display ? { ...entry, display: true } : entry,
         );
       }),
     ];
@@ -174,6 +175,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     resetLiveThinking();
+    tuiMode = ctx.mode === "tui";
     currentTheme = () => ctx.ui.theme;
     ctx.ui.setHiddenThinkingLabel("");
   });
@@ -182,9 +184,9 @@ export default function tinyTools(pi: ExtensionAPI): void {
     if (event.message.role === "assistant") updateLiveThinking(event.message);
   });
 
-  pi.on("message_end", (event) => {
+  pi.on("message_end", (event, ctx) => {
     if (event.message.role === "assistant") finishLiveThinking(event.message);
-    if (event.message.role === "custom" && !event.message.display) {
+    if (ctx.mode === "tui" && event.message.role === "custom" && !event.message.display) {
       return { message: { ...event.message, display: true } };
     }
   });
@@ -195,6 +197,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
       for (const restore of restorePatches!.reverse()) restore();
       restorePatches = undefined;
       currentTheme = undefined;
+      tuiMode = false;
     }
     resetLiveThinking();
   });
