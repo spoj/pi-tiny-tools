@@ -126,7 +126,9 @@ test("internal traces stay compact while native expansion state changes", () => 
   const answer = new Container();
   answer.addChild(visibleAnswer);
   const answerLines = answer.render(80);
-  assert.ok(answerLines.findIndex((line) => line.includes("think")) < answerLines.findIndex((line) => line.includes("answer")));
+  assert.equal(answerLines.length, 3);
+  assert.equal(answerLines[1], "");
+  assert.match(answerLines[2]!, /answer/);
 
   const trace = new Container();
   trace.addChild(hiddenThinking);

@@ -102,6 +102,7 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
       const lines = child.render(width);
       if (lines.length > 0) {
         flushTraces();
+        if (previous === "trace") output.push("");
         output.push(...lines);
         previous = "content";
       }
