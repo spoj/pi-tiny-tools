@@ -32,6 +32,8 @@ test("thinking visibility selects compact or native tools without changing expan
     on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
       handlers.set(name, handler);
     },
+    registerCommand() {},
+    registerShortcut() {},
   } as unknown as ExtensionAPI;
 
   tinyTools(pi);

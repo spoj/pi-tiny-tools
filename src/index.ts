@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequences, type CustomRow, type ToolRow, type TraceRow } from "./format.ts";
+import { showTraceInspector } from "./trace-inspector.ts";
 
 type Render = (this: unknown, width: number) => string[];
 type PatchedPrototype = {
@@ -183,6 +184,15 @@ function restoreAssistant(prototype: PatchedAssistantPrototype): void {
 }
 
 export default function tinyTools(pi: ExtensionAPI): void {
+  pi.registerCommand("trace", {
+    description: "Inspect tool calls, results, and custom messages",
+    handler: async (_args, ctx) => showTraceInspector(ctx),
+  });
+  pi.registerShortcut("ctrl+shift+i", {
+    description: "Open the tool trace inspector",
+    handler: showTraceInspector,
+  });
+
   const toolPrototype = ToolExecutionComponent.prototype as unknown as PatchedPrototype;
   const customPrototype = CustomMessageComponent.prototype as unknown as PatchedPrototype;
   const assistantPrototype = AssistantMessageComponent.prototype as unknown as PatchedAssistantPrototype;
