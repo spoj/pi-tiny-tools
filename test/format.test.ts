@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { customSummary, renderCustomRow, renderToolRow, resultChars, textContent, toolInvocation } from "../src/format.ts";
+import { customSummary, renderCustomRow, renderToolGroup, renderToolRow, textContent } from "../src/format.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
@@ -10,65 +10,23 @@ test("extracts text without changing non-text blocks", () => {
   assert.deepEqual(content, [{ type: "text", text: "one" }, { type: "image", data: "abc" }, { type: "text", text: "two" }]);
 });
 
-test("uses Pi's call renderer for arbitrary tools", () => {
-  const row = {
-    toolName: "anything",
-    args: { ignored: true },
-    callRendererComponent: { render: () => ["• anything useful"] },
-  };
-  assert.equal(toolInvocation(row), "anything useful");
+test("tool rows show only the tool name", () => {
+  const lines = renderToolRow({ toolName: "read", result: { isError: false }, isPartial: false }, 40);
+  assert.deepEqual(lines, ["  › read"]);
 });
 
-test("strips terminal control sequences from tool invocations", () => {
-  const row = {
-    toolName: "anything",
-    callRendererComponent: { render: () => ["\x1b[?25l\x1b[1;1f• anything useful"] },
-  };
-  assert.equal(toolInvocation(row), "anything useful");
+test("tool groups wrap names onto indented continuation lines", () => {
+  const lines = renderToolGroup([
+    { toolName: "read" },
+    { toolName: "bash" },
+    { toolName: "ForkSteer" },
+    { toolName: "write" },
+  ], 20);
+  assert.deepEqual(lines, ["  › read bash", "    ForkSteer write"]);
+  assert.ok(lines.every((line) => visibleWidth(line) <= 20));
 });
 
-test("normalizes spaced tool titles before adding the tool name", () => {
-  const row = {
-    toolName: "ForkSteer",
-    callRendererComponent: { render: () => ["Fork Steer fork-1234"] },
-  };
-  assert.equal(toolInvocation(row), "ForkSteer fork-1234");
-});
-
-test("renders shell calls like normal tool calls", () => {
-  const row = {
-    toolName: "bash",
-    callRendererComponent: { render: () => ["$ git status", "second line"] },
-  };
-  assert.equal(toolInvocation(row), "bash git status");
-});
-
-test("falls back to tool name and JSON arguments", () => {
-  assert.equal(toolInvocation({ toolName: "mcp", args: { query: "hello" } }), 'mcp {"query":"hello"}');
-});
-
-test("counts only tool-result text", () => {
-  assert.equal(resultChars({ result: { content: [{ type: "text", text: "abc" }, { type: "image" }] } }), 3);
-  assert.equal(resultChars({}), undefined);
-});
-
-test("tool rows are compact, width safe, and truncate overflow at the end", () => {
-  const row = {
-    toolName: "read",
-    args: { path: "/a/very/long/path/to/file.ts" },
-    result: { content: [{ type: "text", text: "x".repeat(1200) }], isError: false },
-    isPartial: false,
-  };
-  const lines = renderToolRow(row, 40);
-  assert.equal(lines.length, 1);
-  assert.ok(!lines[0].includes("▏"));
-  assert.ok(lines[0].includes("1.2k ch"));
-  assert.ok(lines[0].includes('read {"path":"/a/very/'));
-  assert.ok(!lines[0].includes("file.ts"));
-  assert.ok(visibleWidth(lines[0]) <= 40);
-});
-
-test("tool marker and name share the status color while details stay muted", () => {
+test("tool names retain their individual status colors", () => {
   const colors: Array<[string, string]> = [];
   const theme = {
     fg(color: string, text: string) {
@@ -76,30 +34,14 @@ test("tool marker and name share the status color while details stay muted", () 
       return text;
     },
   } as unknown as Theme;
-  const callRendererComponent = { render: () => ["$ git status"] };
-  renderToolRow({ toolName: "bash", callRendererComponent, result: { content: [], isError: false } }, 80, theme);
-  renderToolRow({ toolName: "bash", callRendererComponent, result: { content: [], isError: true } }, 80, theme);
-  assert.ok(colors.some(([color, text]) => color === "success" && text === "›"));
-  assert.ok(colors.some(([color, text]) => color === "success" && text === "bash"));
-  assert.ok(colors.some(([color, text]) => color === "error" && text === "›"));
-  assert.ok(colors.some(([color, text]) => color === "error" && text === "bash"));
-  assert.ok(colors.some(([color, text]) => color === "muted" && text === " git status"));
-});
-
-test("long streaming tool calls keep their visible text stable", () => {
-  const first = renderToolRow({ toolName: "tool", args: { text: "x".repeat(100) } }, 30);
-  const updated = renderToolRow({ toolName: "tool", args: { text: `${"x".repeat(100)}changing tail` } }, 30);
-  assert.deepEqual(updated, first);
-});
-
-test("image results show their media type instead of zero characters", () => {
-  const lines = renderToolRow({
-    toolName: "image_tool",
-    result: { content: [{ type: "image", mimeType: "image/png" }], isError: false },
-    isPartial: false,
-  }, 50);
-  assert.ok(lines[0].includes("png"));
-  assert.ok(!lines[0].includes("0 ch"));
+  renderToolGroup([
+    { toolName: "pending" },
+    { toolName: "done", result: { isError: false } },
+    { toolName: "failed", result: { isError: true } },
+  ], 80, theme);
+  assert.ok(colors.some(([color, text]) => color === "accent" && text === "pending"));
+  assert.ok(colors.some(([color, text]) => color === "success" && text === "done"));
+  assert.ok(colors.some(([color, text]) => color === "error" && text === "failed"));
 });
 
 test("custom rows use customType and completion result", () => {

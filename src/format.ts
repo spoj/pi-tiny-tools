@@ -1,18 +1,15 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export type ContentBlock = {
   type?: unknown;
   text?: unknown;
-  mimeType?: unknown;
 };
 
 export type ToolRow = {
   toolName?: unknown;
-  args?: unknown;
-  result?: { content?: unknown; isError?: unknown };
+  result?: { isError?: unknown };
   isPartial?: unknown;
-  callRendererComponent?: { render?: (width: number) => unknown };
 };
 
 export type CustomRow = {
@@ -22,7 +19,6 @@ export type CustomRow = {
   };
 };
 
-const CAPTURE_WIDTH = 10_000;
 const PREFIX_WIDTH = 4;
 
 export function stripTerminalSequences(text: string): string {
@@ -37,62 +33,6 @@ export function textContent(content: unknown): string {
     .filter((block) => block.type === "text" && typeof block.text === "string")
     .map((block) => block.text as string)
     .join("\n");
-}
-
-function compactJson(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? "";
-  } catch {
-    return String(value ?? "");
-  }
-}
-
-function normalizeToolTitle(line: string, name: string): string {
-  let cursor = 0;
-  for (const character of name) {
-    while (/\s/.test(line[cursor] ?? "")) cursor++;
-    if (line[cursor] !== character) return line;
-    cursor++;
-  }
-  if (cursor < line.length && !/\s/.test(line[cursor])) return line;
-  return `${name}${line.slice(cursor)}`;
-}
-
-function renderedInvocation(row: ToolRow): string | undefined {
-  const render = row.callRendererComponent?.render;
-  if (typeof render !== "function") return;
-  const rendered = render.call(row.callRendererComponent, CAPTURE_WIDTH);
-  if (!Array.isArray(rendered)) return;
-  const lines = rendered.map((line) => stripTerminalSequences(String(line)).trim()).filter(Boolean);
-  if (lines.length === 0) return;
-  const name = typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
-  return normalizeToolTitle(
-    lines[0]
-      .replace(/^•\s*/, "")
-      .replace(/^\$\s*/, `${name} `)
-      .replace(/\s+\(timeout [^)]+\)\s*$/i, ""),
-    name,
-  );
-}
-
-export function toolInvocation(row: ToolRow): string {
-  const rendered = renderedInvocation(row);
-  if (rendered) return rendered;
-  const name = typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
-  const args = compactJson(row.args ?? {});
-  return args === "{}" || !args ? name : `${name} ${args}`;
-}
-
-export function resultChars(row: ToolRow): number | undefined {
-  if (!row.result) return;
-  return textContent(row.result.content).length;
-}
-
-function imageType(content: unknown): string | undefined {
-  if (!Array.isArray(content)) return;
-  const image = content.find((block) => block?.type === "image") as ContentBlock | undefined;
-  if (!image) return;
-  return typeof image.mimeType === "string" ? image.mimeType.replace(/^image\//, "") : "image";
 }
 
 function compactCount(value: number): string {
@@ -122,21 +62,25 @@ function prefix(theme: Theme | undefined, color: LabelColor): string {
   return `  ${bullet} `;
 }
 
+function toolColor(row: ToolRow): LabelColor {
+  return row.result?.isError ? "error" : row.result && row.isPartial !== true ? "success" : "accent";
+}
+
+function toolName(row: ToolRow): string {
+  return typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
+}
+
+export function renderToolGroup(rows: ToolRow[], width: number, theme?: Theme): string[] {
+  if (rows.length === 0) return [];
+  const names = rows.map((row) => theme?.fg(toolColor(row), toolName(row)) ?? toolName(row)).join(" ");
+  if (width <= PREFIX_WIDTH) return [truncateToWidth(`${prefix(theme, toolColor(rows[0]))}${names}`, Math.max(1, width))];
+  return wrapTextWithAnsi(names, width - PREFIX_WIDTH).map((line, index) =>
+    `${index === 0 ? prefix(theme, toolColor(rows[0])) : " ".repeat(PREFIX_WIDTH)}${line}`,
+  );
+}
+
 export function renderToolRow(row: ToolRow, width: number, theme?: Theme): string[] {
-  const color = row.result?.isError ? "error" : row.result && row.isPartial !== true ? "success" : "accent";
-  const chars = resultChars(row);
-  const image = imageType(row.result?.content);
-  const fact = [image, chars === undefined || (image && chars === 0) ? undefined : `${compactCount(chars)} ch`]
-    .filter(Boolean)
-    .join(" · ");
-  const suffix = !fact
-    ? ""
-    : theme?.fg(chars !== undefined && chars >= 50_000 ? "error" : chars !== undefined && chars >= 10_000 ? "warning" : "dim", fact) ?? fact;
-  const invocation = toolInvocation(row);
-  const name = typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
-  const label = theme?.fg(color, name) ?? name;
-  const details = theme?.fg("muted", invocation.slice(name.length)) ?? invocation.slice(name.length);
-  return [fitRow(prefix(theme, color), `${label}${details}`, suffix, width)];
+  return renderToolGroup([row], width, theme);
 }
 
 export function customSummary(row: CustomRow): { label: string; text: string; chars: number } {

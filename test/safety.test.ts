@@ -63,7 +63,12 @@ test("patches compact rows, groups traces, and syncs tool expansion with thinkin
   trace.addChild({ render: () => ["assistant", " "], invalidate() {} });
   trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
-    render: () => ["  › tool"],
+    toolName: "tool",
+  }));
+  trace.addChild(new Spacer(1));
+  trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
+    expanded: false,
+    toolName: "tool2",
   }));
   trace.addChild(new Spacer(1));
   trace.addChild(Object.assign(Object.create(CustomMessageComponent.prototype), {
@@ -73,10 +78,10 @@ test("patches compact rows, groups traces, and syncs tool expansion with thinkin
   trace.addChild({ render: () => ["", "next message"], invalidate() {} });
   trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
-    render: () => ["  › second tool"],
+    toolName: "second",
   }));
   assert.deepEqual(trace.render(80), [
-    "assistant", " ", "", "  › tool", "  › custom", "", "next message", "", "  › second tool",
+    "assistant", " ", "", "  › tool tool2", "  › custom", "", "next message", "", "  › second",
   ]);
 
   assistantPrototype.setHideThinkingBlock.call({}, false);

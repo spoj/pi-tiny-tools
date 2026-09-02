@@ -1,14 +1,14 @@
 # pi-tiny-tools
 
-A small [Pi](https://github.com/earendil-works/pi-mono) extension that replaces boxed tool output and extension messages with compact one-line rows.
+A small [Pi](https://github.com/earendil-works/pi-mono) extension that replaces boxed tool output with status-colored tool names and extension messages with compact rows.
 
 ```text
-  › read src/index.ts:1-120                         4.2k ch
-  › bash npm test                                   1.8k ch
+  › read bash edit write Fork
+    ForkSteer read
   › [pi-subagents] Subagent completed · Result: done  0.2k ch
 ```
 
-Press `Ctrl+O` to switch between the compact rows and Pi's complete native rendering. Showing or hiding thinking with `Ctrl+T` expands or collapses tools with it. Compact traces have one leading blank line and no blank rows between calls. Hidden thinking leaves no placeholder. Normal user and assistant messages are not changed.
+Tool names flow onto indented continuation lines when needed. Press `Ctrl+O` to switch between the compact view and Pi's complete native rendering. Showing or hiding thinking with `Ctrl+T` expands or collapses tools with it. Compact traces have one leading blank line and no blank rows between calls. Hidden thinking leaves no placeholder. Normal user and assistant messages are not changed.
 
 ## Install
 

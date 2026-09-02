@@ -6,7 +6,7 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer } from "@earendil-works/pi-tui";
-import { renderCustomRow, renderToolRow, stripTerminalSequences, type CustomRow, type ToolRow } from "./format.ts";
+import { renderCustomRow, renderToolGroup, renderToolRow, stripTerminalSequences, type CustomRow, type ToolRow } from "./format.ts";
 
 type Render = (this: unknown, width: number) => string[];
 type PatchedPrototype = {
@@ -75,11 +75,14 @@ function isBlank(line: string): boolean {
   return stripTerminalSequences(line).trim() === "";
 }
 
+function isCompactTool(component: unknown): component is ToolExecutionComponent {
+  if (!(component instanceof ToolExecutionComponent)) return false;
+  const tool = component as unknown as { expanded?: unknown; hideComponent?: unknown };
+  return tool.expanded !== true && tool.hideComponent !== true;
+}
+
 function isCompactTrace(component: unknown): boolean {
-  if (component instanceof ToolExecutionComponent) {
-    const tool = component as unknown as { expanded?: unknown; hideComponent?: unknown };
-    return tool.expanded !== true && tool.hideComponent !== true;
-  }
+  if (isCompactTool(component)) return true;
   if (component instanceof CustomMessageComponent) {
     return (component as unknown as { _expanded?: unknown })._expanded !== true;
   }
@@ -88,16 +91,36 @@ function isCompactTrace(component: unknown): boolean {
 
 function renderTraceGroups(children: Array<{ render: (width: number) => string[] }>, width: number): string[] {
   const output: string[] = [];
+  const tools: ToolRow[] = [];
   let pendingSpacing: string[] = [];
   let previous: "content" | "trace" | undefined;
 
+  const flushTools = (): void => {
+    if (tools.length === 0) return;
+    if (previous === "content") output.push("");
+    output.push(...renderToolGroup(tools, width, currentTheme?.()));
+    tools.length = 0;
+    previous = "trace";
+  };
+
   for (const child of children) {
+    if (child instanceof Spacer) {
+      pendingSpacing.push(...child.render(width));
+      continue;
+    }
+    if (isCompactTool(child)) {
+      tools.push(child as unknown as ToolRow);
+      pendingSpacing = [];
+      continue;
+    }
+
     const lines = child.render(width);
-    if (child instanceof Spacer || lines.length === 0) {
+    if (lines.length === 0) {
       pendingSpacing.push(...lines);
       continue;
     }
 
+    flushTools();
     const current = isCompactTrace(child) ? "trace" : "content";
     if (current === "content") output.push(...pendingSpacing);
     else if (previous === "content") output.push("");
@@ -106,6 +129,7 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
     previous = current;
   }
 
+  flushTools();
   return [...output, ...pendingSpacing];
 }
 
