@@ -333,7 +333,7 @@ export class TraceInspector implements Component {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+    if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c") || matchesKey(data, "alt+t")) {
       this.done();
       return;
     }
@@ -391,7 +391,7 @@ export class TraceInspector implements Component {
     }
 
     lines.push(border("├", "─", "┤"));
-    lines.push(row(this.theme.fg("dim", " j/k item · PgUp/PgDn scroll · g/G top/bottom · Esc close")));
+    lines.push(row(this.theme.fg("dim", " j/k item · PgUp/PgDn scroll · g/G top/bottom · Esc/Alt+T close")));
     lines.push(border("╰", "─", "╯"));
     return lines;
   }

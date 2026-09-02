@@ -19,7 +19,7 @@ Run `/trace` or press `Alt+T` to inspect minimized items from the current sessio
 - `j` / `k`: next / previous item
 - `PageDown` / `PageUp` or `Ctrl+D` / `Ctrl+U`: scroll the current item
 - `g` / `G`: top / bottom
-- `Esc`: close
+- `Esc` / `Alt+T`: close
 
 The inspector shows the complete retained content for traceable items. It cannot recover output that a tool discarded before returning; when a tool truncates output, its stored result and truncation details are shown.
 

@@ -380,4 +380,8 @@ test("inspector navigates items, scrolls content, and respects its render width"
 
   inspector.handleInput("\x1b");
   assert.equal(closed, true);
+
+  closed = false;
+  inspector.handleInput("\x1bt");
+  assert.equal(closed, true);
 });
