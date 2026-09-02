@@ -11,7 +11,7 @@ import {
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import tinyTools from "../src/index.ts";
 
-test("patches compact rows, groups traces, and syncs tool expansion with thinking", () => {
+test("thinking visibility selects compact or native tools without changing expansion", () => {
   initTheme();
   const toolPrototype = ToolExecutionComponent.prototype as unknown as { render: unknown };
   const customPrototype = CustomMessageComponent.prototype as unknown as { render: unknown };
@@ -43,11 +43,9 @@ test("patches compact rows, groups traces, and syncs tool expansion with thinkin
   assert.equal(userPrototype.render, nativeUserRender);
   assert.notEqual(containerPrototype.render, nativeContainerRender);
 
-  let toolsExpanded = false;
   let hiddenThinkingLabel = "Thinking...";
   handlers.get("session_start")?.({}, {
     ui: {
-      setToolsExpanded: (expanded: boolean) => { toolsExpanded = expanded; },
       setHiddenThinkingLabel: (label: string) => { hiddenThinkingLabel = label; },
     },
   });
@@ -61,33 +59,51 @@ test("patches compact rows, groups traces, and syncs tool expansion with thinkin
 
   const trace = new Container();
   trace.addChild({ render: () => ["assistant", " "], invalidate() {} });
-  trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
+  const tool = Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
     toolName: "tool",
-  }));
+    render: () => ["native tool output"],
+  });
+  trace.addChild(tool);
   trace.addChild(new Spacer(1));
-  trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
+  const tool2 = Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
     toolName: "tool2",
-  }));
+    render: () => ["native tool2 output"],
+  });
+  trace.addChild(tool2);
   trace.addChild(new Spacer(1));
   trace.addChild(Object.assign(Object.create(CustomMessageComponent.prototype), {
     _expanded: false,
     render: () => ["  › custom"],
   }));
   trace.addChild({ render: () => ["", "next message"], invalidate() {} });
-  trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
+  const second = Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
     toolName: "second",
-  }));
+    render: () => ["native second output"],
+  });
+  trace.addChild(second);
+  assert.deepEqual(trace.render(80), [
+    "assistant", " ", "", "  › tool tool2", "  › custom", "", "next message", "", "  › second",
+  ]);
+
+  tool.expanded = true;
+  tool2.expanded = true;
+  second.expanded = true;
   assert.deepEqual(trace.render(80), [
     "assistant", " ", "", "  › tool tool2", "  › custom", "", "next message", "", "  › second",
   ]);
 
   assistantPrototype.setHideThinkingBlock.call({}, false);
-  assert.equal(toolsExpanded, true);
+  assert.equal(tool.expanded, true);
+  assert.equal(tool2.expanded, true);
+  assert.equal(second.expanded, true);
+  assert.ok(trace.render(80).includes("native tool output"));
   assistantPrototype.setHideThinkingBlock.call({}, true);
-  assert.equal(toolsExpanded, false);
+  assert.deepEqual(trace.render(80), [
+    "assistant", " ", "", "  › tool tool2", "  › custom", "", "next message", "", "  › second",
+  ]);
 
   handlers.get("session_shutdown")?.();
 

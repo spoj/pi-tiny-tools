@@ -32,7 +32,7 @@ type PatchedAssistantPrototype = {
 };
 
 let currentTheme: (() => Theme | undefined) | undefined;
-let setToolsExpanded: ((expanded: boolean) => void) | undefined;
+let compactDisplay = false;
 
 function patch(
   prototype: PatchedPrototype,
@@ -42,11 +42,8 @@ function patch(
   if (prototype.__piTinyToolsPatch === kind) return;
   const original = prototype.__piTinyToolsOriginalRender ?? prototype.render;
   const wrapper: Render = function (width) {
-    const row = this as { expanded?: unknown; _expanded?: unknown; hideComponent?: unknown };
-    const expanded = kind === "tool" ? row.expanded : row._expanded;
-    if (expanded === true || (kind === "tool" && row.hideComponent === true)) {
-      return original.call(this, width);
-    }
+    const row = this as { hideComponent?: unknown };
+    if (!compactDisplay || (kind === "tool" && row.hideComponent === true)) return original.call(this, width);
     try {
       return compact(this, width, currentTheme?.());
     } catch {
@@ -76,17 +73,13 @@ function isBlank(line: string): boolean {
 }
 
 function isCompactTool(component: unknown): component is ToolExecutionComponent {
-  if (!(component instanceof ToolExecutionComponent)) return false;
-  const tool = component as unknown as { expanded?: unknown; hideComponent?: unknown };
-  return tool.expanded !== true && tool.hideComponent !== true;
+  return compactDisplay
+    && component instanceof ToolExecutionComponent
+    && (component as unknown as { hideComponent?: unknown }).hideComponent !== true;
 }
 
 function isCompactTrace(component: unknown): boolean {
-  if (isCompactTool(component)) return true;
-  if (component instanceof CustomMessageComponent) {
-    return (component as unknown as { _expanded?: unknown })._expanded !== true;
-  }
-  return false;
+  return isCompactTool(component) || (compactDisplay && component instanceof CustomMessageComponent);
 }
 
 function renderTraceGroups(children: Array<{ render: (width: number) => string[] }>, width: number): string[] {
@@ -139,6 +132,10 @@ function patchContainer(prototype: PatchedContainerPrototype): void {
   const original = prototype.render;
   const render: Render = function (width) {
     const children = (this as { children: Array<{ render: (width: number) => string[] }> }).children;
+    const assistant = [...children].reverse().find((child) => child instanceof AssistantMessageComponent) as
+      | { hideThinkingBlock?: unknown }
+      | undefined;
+    if (assistant) compactDisplay = assistant.hideThinkingBlock === true;
     return children.some(isCompactTrace) ? renderTraceGroups(children, width) : original.call(this, width);
   };
   prototype.__piTinyToolsOriginalContainerRender = original;
@@ -157,13 +154,14 @@ function patchAssistant(prototype: PatchedAssistantPrototype): void {
   if (prototype.__piTinyToolsSetHideThinking) return;
   const originalRender = prototype.render;
   const render: Render = function (width) {
+    compactDisplay = (this as { hideThinkingBlock?: unknown }).hideThinkingBlock === true;
     const lines = originalRender.call(this, width);
     return lines.every(isBlank) ? [] : lines;
   };
   const originalSetHideThinking = prototype.setHideThinkingBlock;
   const setHideThinking: SetHideThinking = function (hide) {
+    compactDisplay = hide;
     originalSetHideThinking.call(this, hide);
-    setToolsExpanded?.(!hide);
   };
   prototype.__piTinyToolsOriginalAssistantRender = originalRender;
   prototype.__piTinyToolsAssistantRender = render;
@@ -200,7 +198,6 @@ export default function tinyTools(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     currentTheme = () => ctx.ui.theme;
-    setToolsExpanded = (expanded) => ctx.ui.setToolsExpanded(expanded);
     ctx.ui.setHiddenThinkingLabel("");
   });
 
@@ -210,6 +207,6 @@ export default function tinyTools(pi: ExtensionAPI): void {
     restoreAssistant(assistantPrototype);
     restoreContainer(containerPrototype);
     currentTheme = undefined;
-    setToolsExpanded = undefined;
+    compactDisplay = false;
   });
 }

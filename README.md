@@ -8,7 +8,7 @@ A small [Pi](https://github.com/earendil-works/pi-mono) extension that replaces 
   › [pi-subagents] Subagent completed · Result: done  0.2k ch
 ```
 
-Tool names flow onto indented continuation lines when needed. Press `Ctrl+O` to switch between the compact view and Pi's complete native rendering. Showing or hiding thinking with `Ctrl+T` expands or collapses tools with it. Compact traces have one leading blank line and no blank rows between calls. Hidden thinking leaves no placeholder. Normal user and assistant messages are not changed.
+Tool names flow onto indented continuation lines when needed. `Ctrl+T` switches between visible thinking with Pi's native tool rendering and hidden thinking with compact tool names. `Ctrl+O` retains Pi's normal collapsed/full tool-output toggle; while the compact view is active it updates the underlying native view without changing what is visible. Compact traces have one leading blank line and no blank rows between calls. Hidden thinking leaves no placeholder. Normal user and assistant messages are not changed.
 
 ## Install
 
