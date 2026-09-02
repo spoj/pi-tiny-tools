@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AssistantMessageComponent,
+  BashExecutionComponent,
+  BranchSummaryMessageComponent,
+  CompactionSummaryMessageComponent,
   CustomMessageComponent,
   initTheme,
   ToolExecutionComponent,
@@ -11,13 +14,14 @@ import {
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import tinyTools from "../src/index.ts";
 
-test("thinking visibility selects compact or native tools without changing expansion", () => {
+test("internal traces stay compact and native expansion toggles are shadowed", () => {
   initTheme();
   const toolPrototype = ToolExecutionComponent.prototype as unknown as { render: unknown };
   const customPrototype = CustomMessageComponent.prototype as unknown as { render: unknown };
   const assistantPrototype = AssistantMessageComponent.prototype as unknown as {
     render: (this: unknown, width: number) => string[];
     setHideThinkingBlock: (this: unknown, hide: boolean) => void;
+    updateContent: (this: unknown, message: unknown, isStreaming?: boolean) => void;
   };
   const userPrototype = UserMessageComponent.prototype as unknown as { render: unknown };
   const containerPrototype = Container.prototype as unknown as { render: unknown };
@@ -25,15 +29,19 @@ test("thinking visibility selects compact or native tools without changing expan
   const nativeCustomRender = customPrototype.render;
   const nativeAssistantRender = assistantPrototype.render;
   const nativeSetHideThinking = assistantPrototype.setHideThinkingBlock;
+  const nativeUpdateContent = assistantPrototype.updateContent;
   const nativeUserRender = userPrototype.render;
   const nativeContainerRender = containerPrototype.render;
   const handlers = new Map<string, (event?: unknown, ctx?: unknown) => void>();
+  const shortcuts = new Map<string, () => void>();
   const pi = {
     on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
       handlers.set(name, handler);
     },
     registerCommand() {},
-    registerShortcut() {},
+    registerShortcut(key: string, options: { handler: () => void }) {
+      shortcuts.set(key, options.handler);
+    },
   } as unknown as ExtensionAPI;
 
   tinyTools(pi);
@@ -42,8 +50,10 @@ test("thinking visibility selects compact or native tools without changing expan
   assert.notEqual(customPrototype.render, nativeCustomRender);
   assert.notEqual(assistantPrototype.render, nativeAssistantRender);
   assert.notEqual(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
+  assert.notEqual(assistantPrototype.updateContent, nativeUpdateContent);
   assert.equal(userPrototype.render, nativeUserRender);
   assert.notEqual(containerPrototype.render, nativeContainerRender);
+  assert.deepEqual([...shortcuts.keys()], ["ctrl+t", "ctrl+o"]);
 
   let hiddenThinkingLabel = "Thinking...";
   handlers.get("session_start")?.({}, {
@@ -56,11 +66,20 @@ test("thinking visibility selects compact or native tools without changing expan
   const hiddenThinking = new AssistantMessageComponent({
     content: [{ type: "thinking", thinking: "hidden" }, { type: "toolCall" }],
     stopReason: "toolUse",
-  } as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0], true, undefined, "");
+  } as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0], false, undefined, "");
   assert.deepEqual(hiddenThinking.render(80), []);
 
+  const visibleAnswer = new AssistantMessageComponent({
+    content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "answer" }],
+    stopReason: "stop",
+  } as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0], false, undefined, "");
+  const answer = new Container();
+  answer.addChild(visibleAnswer);
+  const answerLines = answer.render(80);
+  assert.ok(answerLines.findIndex((line) => line.includes("think")) < answerLines.findIndex((line) => line.includes("answer")));
+
   const trace = new Container();
-  trace.addChild({ render: () => ["assistant", " "], invalidate() {} });
+  trace.addChild(hiddenThinking);
   const tool = Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
     toolName: "tool",
@@ -80,6 +99,22 @@ test("thinking visibility selects compact or native tools without changing expan
     message: { customType: "custom-name" },
     render: () => ["native custom output"],
   }));
+  trace.addChild(new Spacer(1));
+  trace.addChild(Object.assign(Object.create(BashExecutionComponent.prototype), {
+    render: () => ["user bash output"],
+  }));
+  trace.addChild(new Spacer(1));
+  trace.addChild(Object.assign(Object.create(BranchSummaryMessageComponent.prototype), {
+    render: () => ["branch summary"],
+  }));
+  trace.addChild(new Spacer(1));
+  trace.addChild(Object.assign(Object.create(CompactionSummaryMessageComponent.prototype), {
+    render: () => ["compaction summary"],
+  }));
+  trace.addChild(new Spacer(1));
+  const customEntry = { entry: { type: "custom" }, render: () => ["custom entry"], invalidate() {} };
+  trace.addChild(customEntry);
+  trace.addChild(new Spacer(1));
   trace.addChild({ render: () => ["", "next message"], invalidate() {} });
   const second = Object.assign(Object.create(ToolExecutionComponent.prototype), {
     expanded: false,
@@ -87,26 +122,17 @@ test("thinking visibility selects compact or native tools without changing expan
     render: () => ["native second output"],
   });
   trace.addChild(second);
-  assert.deepEqual(trace.render(80), [
-    "assistant", " ", "", "  › tool tool2 custom-name", "", "next message", "", "  › second",
-  ]);
+
+  const compact = [" › think tool tool2 custom-name", "", "next message", "", " › second"];
+  assert.deepEqual(trace.render(80), compact);
 
   tool.expanded = true;
   tool2.expanded = true;
   second.expanded = true;
-  assert.deepEqual(trace.render(80), [
-    "assistant", " ", "", "  › tool tool2 custom-name", "", "next message", "", "  › second",
-  ]);
-
-  assistantPrototype.setHideThinkingBlock.call({}, false);
-  assert.equal(tool.expanded, true);
-  assert.equal(tool2.expanded, true);
-  assert.equal(second.expanded, true);
-  assert.ok(trace.render(80).includes("native custom output"));
-  assistantPrototype.setHideThinkingBlock.call({}, true);
-  assert.deepEqual(trace.render(80), [
-    "assistant", " ", "", "  › tool tool2 custom-name", "", "next message", "", "  › second",
-  ]);
+  assistantPrototype.setHideThinkingBlock.call(hiddenThinking, false);
+  assert.deepEqual(trace.render(80), compact);
+  shortcuts.get("ctrl+o")?.();
+  assert.deepEqual(trace.render(80), compact);
 
   handlers.get("session_shutdown")?.();
 
@@ -114,6 +140,7 @@ test("thinking visibility selects compact or native tools without changing expan
   assert.equal(customPrototype.render, nativeCustomRender);
   assert.equal(assistantPrototype.render, nativeAssistantRender);
   assert.equal(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
+  assert.equal(assistantPrototype.updateContent, nativeUpdateContent);
   assert.equal(Object.hasOwn(CustomMessageComponent.prototype, "render"), false);
   assert.equal(userPrototype.render, nativeUserRender);
   assert.equal(containerPrototype.render, nativeContainerRender);

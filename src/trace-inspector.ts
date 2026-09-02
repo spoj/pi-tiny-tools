@@ -3,7 +3,7 @@ import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Compo
 
 export type TraceItem = {
   id: string;
-  kind: "tool" | "custom";
+  kind: "tool" | "custom" | "thinking";
   name: string;
   status: "pending" | "success" | "error";
   hidden?: boolean;
@@ -48,17 +48,37 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
 
     if (entry.type !== "message") continue;
     if (entry.message.role === "assistant") {
-      for (const part of entry.message.content) {
-        if (part.type !== "toolCall") continue;
-        const item: TraceItem = {
-          id: part.id,
-          kind: "tool",
-          name: part.name,
-          status: "pending",
-          call: part.arguments,
-        };
-        items.push(item);
-        tools.set(part.id, item);
+      for (let index = 0; index < entry.message.content.length; index++) {
+        const part = entry.message.content[index]!;
+        if (part.type === "thinking") {
+          const blocks: string[] = [];
+          while (index < entry.message.content.length) {
+            const thinking = entry.message.content[index]!;
+            if (thinking.type !== "thinking") break;
+            if (thinking.thinking.trim()) blocks.push(thinking.thinking);
+            index++;
+          }
+          index--;
+          if (blocks.length > 0) {
+            items.push({
+              id: `${entry.id}:thinking:${index}`,
+              kind: "thinking",
+              name: "think",
+              status: "success",
+              output: blocks.join("\n\n"),
+            });
+          }
+        } else if (part.type === "toolCall") {
+          const item: TraceItem = {
+            id: part.id,
+            kind: "tool",
+            name: part.name,
+            status: "pending",
+            call: part.arguments,
+          };
+          items.push(item);
+          tools.set(part.id, item);
+        }
       }
       continue;
     }
@@ -101,6 +121,47 @@ function fit(text: string, width: number): string {
   return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
 }
 
+type ThinkingMessage = {
+  timestamp: number;
+  content: Array<{ type: string; thinking?: string }>;
+};
+
+let liveThinking: TraceItem | undefined;
+let activeInspector: TraceInspector | undefined;
+
+function thinkingText(message: ThinkingMessage): string {
+  return message.content
+    .filter((part): part is { type: string; thinking: string } => part.type === "thinking" && typeof part.thinking === "string")
+    .map((part) => part.thinking)
+    .filter((text) => text.trim())
+    .join("\n\n");
+}
+
+export function updateLiveThinking(message: ThinkingMessage): void {
+  const output = thinkingText(message);
+  if (!output) return;
+  const id = `live-thinking:${message.timestamp}`;
+  if (liveThinking?.id !== id) {
+    liveThinking = { id, kind: "thinking", name: "think", status: "pending", output };
+  } else {
+    liveThinking.output = output;
+  }
+  activeInspector?.updateLiveThinking(liveThinking);
+}
+
+export function finishLiveThinking(message: ThinkingMessage): void {
+  updateLiveThinking(message);
+  if (!liveThinking || liveThinking.id !== `live-thinking:${message.timestamp}`) return;
+  liveThinking.status = "success";
+  activeInspector?.updateLiveThinking(liveThinking);
+  liveThinking = undefined;
+}
+
+export function resetLiveThinking(): void {
+  liveThinking = undefined;
+  activeInspector = undefined;
+}
+
 export class TraceInspector implements Component {
   private readonly items: TraceItem[];
   private readonly theme: Theme;
@@ -115,6 +176,19 @@ export class TraceInspector implements Component {
     this.tui = tui;
     this.done = done;
     this.selected = items.length - 1;
+  }
+
+  updateLiveThinking(item: TraceItem): void {
+    const index = this.items.findIndex((candidate) => candidate.id === item.id);
+    if (index === -1) {
+      const wasNewest = this.selected === this.items.length - 1;
+      this.items.push(item);
+      if (wasNewest) this.selected = this.items.length - 1;
+    } else {
+      this.items[index] = item;
+    }
+    if (this.items[this.selected]?.id === item.id) this.scroll = Number.MAX_SAFE_INTEGER;
+    this.tui.requestRender();
   }
 
   handleInput(data: string): void {
@@ -150,13 +224,15 @@ export class TraceInspector implements Component {
     const maxScroll = Math.max(0, content.length - bodyHeight);
     this.scroll = Math.min(this.scroll, maxScroll);
 
-    const color = item.status === "error"
-      ? "error"
-      : item.status === "pending"
-        ? "accent"
-        : item.kind === "custom"
-          ? "customMessageLabel"
-          : "success";
+    const color = item.kind === "thinking"
+      ? "thinkingText"
+      : item.status === "error"
+        ? "error"
+        : item.status === "pending"
+          ? "accent"
+          : item.kind === "custom"
+            ? "customMessageLabel"
+            : "success";
     const state = item.kind === "custom" ? (item.hidden ? "hidden" : "visible") : item.status;
     const title = ` trace ${this.selected + 1}/${this.items.length} · ${item.kind} · ${this.theme.fg(color, item.name)} · ${state} `;
     const border = (left: string, fill: string, right: string) => this.theme.fg("border", left + fill.repeat(innerWidth) + right);
@@ -188,16 +264,24 @@ export class TraceInspector implements Component {
 export async function showTraceInspector(ctx: ExtensionContext): Promise<void> {
   if (ctx.mode !== "tui") return;
   const items = extractTraceItems(ctx.sessionManager.getBranch());
+  if (liveThinking && !items.some((item) => item.id === liveThinking?.id)) items.push(liveThinking);
   if (items.length === 0) {
-    ctx.ui.notify("No tool calls or custom messages in the current branch", "info");
+    ctx.ui.notify("No tools, thinking, or custom messages in the current branch", "info");
     return;
   }
 
-  await ctx.ui.custom<void>(
-    (tui, theme, _keybindings, done) => new TraceInspector(items, theme, tui, done),
-    {
-      overlay: true,
-      overlayOptions: () => ({ width: "90%", minWidth: 40, maxHeight: "90%", margin: 1 }),
-    },
-  );
+  try {
+    await ctx.ui.custom<void>(
+      (tui, theme, _keybindings, done) => {
+        activeInspector = new TraceInspector(items, theme, tui, done);
+        return activeInspector;
+      },
+      {
+        overlay: true,
+        overlayOptions: () => ({ width: "90%", minWidth: 40, maxHeight: "90%", margin: 1 }),
+      },
+    );
+  } finally {
+    activeInspector = undefined;
+  }
 }

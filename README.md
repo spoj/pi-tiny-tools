@@ -1,15 +1,21 @@
 # pi-tiny-tools
 
-A small [Pi](https://github.com/earendil-works/pi-mono) extension that replaces boxed tool output and extension messages with colored names.
+A small [Pi](https://github.com/earendil-works/pi-mono) extension that reduces Pi's internal activity—tool calls, thinking, and extension messages—to colored names.
 
 ```text
-  › read bash edit write Fork
-    ForkSteer pi-subagents read
+ › think read bash pi-subagents think edit write
 ```
 
-Tool and extension names share the same layout and flow onto indented continuation lines when needed. `Ctrl+T` switches between visible thinking with Pi's native tool rendering and hidden thinking with compact tool names. `Ctrl+O` retains Pi's normal collapsed/full tool-output toggle; while the compact view is active it updates the underlying native view without changing what is visible. Compact traces have one leading blank line and no blank rows between calls. Hidden thinking leaves no placeholder. Normal user and assistant messages are not changed.
+The default transcript is quiet:
 
-Run `/trace` or press `Ctrl+Shift+I` to inspect calls, results, and visible or hidden custom messages from the current session branch in a Pi overlay. It opens on the newest item.
+- User and assistant messages render normally.
+- Tool activity, thinking, and custom messages render only as compact trace names.
+- Other persisted internal entries, including user-shell output, custom entries, compaction summaries, and branch summaries, are hidden.
+- Model and thinking-level changes remain silent.
+
+Internal names share one layout and flow onto indented continuation lines when needed. Thinking uses Pi's native thinking color. Compact traces have one leading blank line and no blank rows between items.
+
+`Ctrl+T` opens the trace inspector instead of toggling thinking. `Ctrl+O` is disabled because tool output is always compact. Run `/trace` or press `Ctrl+T` to inspect thinking, calls, results, and visible or hidden custom messages from the current session branch in a Pi overlay. It opens on the newest item and follows the current thinking trace while it streams.
 
 - `j` / `k`: next / previous item
 - `PageDown` / `PageUp` or `Ctrl+D` / `Ctrl+U`: scroll the current item
@@ -32,9 +38,9 @@ pi -e .
 
 ## Scope
 
-The extension patches Pi's `ToolExecutionComponent` and `CustomMessageComponent` render methods. One tool-row patch covers built-in, extension, and MCP tools. Custom messages use their `customType` as the colored name, including after session reload.
+The extension patches Pi's `ToolExecutionComponent`, `CustomMessageComponent`, and `AssistantMessageComponent` rendering. One tool-row patch covers built-in, extension, and MCP tools. Custom messages use their `customType` as the colored name, including after session reload.
 
-This uses private component state (`expanded`, tool data, and custom-message data) and may need an update when Pi changes those components. Compact-rendering failures fall back to Pi's native renderer.
+This uses private component state (tool data, custom-message data, and assistant message data) and may need an update when Pi changes those components.
 
 The extension changes display only. Tool results and custom-message content sent to the model remain complete.
 

@@ -1,5 +1,8 @@
 import {
   AssistantMessageComponent,
+  BashExecutionComponent,
+  BranchSummaryMessageComponent,
+  CompactionSummaryMessageComponent,
   CustomMessageComponent,
   ToolExecutionComponent,
   type ExtensionAPI,
@@ -7,7 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequences, type CustomRow, type ToolRow, type TraceRow } from "./format.ts";
-import { showTraceInspector } from "./trace-inspector.ts";
+import { finishLiveThinking, resetLiveThinking, showTraceInspector, updateLiveThinking } from "./trace-inspector.ts";
 
 type Render = (this: unknown, width: number) => string[];
 type PatchedPrototype = {
@@ -23,17 +26,20 @@ type PatchedContainerPrototype = {
   __piTinyToolsContainerRender?: Render;
 };
 type SetHideThinking = (this: unknown, hide: boolean) => void;
+type UpdateAssistant = (this: unknown, message: unknown, isStreaming?: boolean) => void;
 type PatchedAssistantPrototype = {
   render: Render;
   setHideThinkingBlock: SetHideThinking;
+  updateContent: UpdateAssistant;
   __piTinyToolsOriginalAssistantRender?: Render;
   __piTinyToolsAssistantRender?: Render;
   __piTinyToolsOriginalSetHideThinking?: SetHideThinking;
   __piTinyToolsSetHideThinking?: SetHideThinking;
+  __piTinyToolsOriginalUpdate?: UpdateAssistant;
+  __piTinyToolsUpdate?: UpdateAssistant;
 };
 
 let currentTheme: (() => Theme | undefined) | undefined;
-let compactDisplay = false;
 
 function patch(
   prototype: PatchedPrototype,
@@ -44,12 +50,8 @@ function patch(
   const original = prototype.__piTinyToolsOriginalRender ?? prototype.render;
   const wrapper: Render = function (width) {
     const row = this as { hideComponent?: unknown };
-    if (!compactDisplay || (kind === "tool" && row.hideComponent === true)) return original.call(this, width);
-    try {
-      return compact(this, width, currentTheme?.());
-    } catch {
-      return original.call(this, width);
-    }
+    if (kind === "tool" && row.hideComponent === true) return original.call(this, width);
+    return compact(this, width, currentTheme?.());
   };
   prototype.__piTinyToolsOriginalRender = original;
   prototype.__piTinyToolsHadOwnRender = Object.hasOwn(prototype, "render");
@@ -74,19 +76,35 @@ function isBlank(line: string): boolean {
 }
 
 function isCompactTool(component: unknown): component is ToolExecutionComponent {
-  return compactDisplay
-    && component instanceof ToolExecutionComponent
+  return component instanceof ToolExecutionComponent
     && (component as unknown as { hideComponent?: unknown }).hideComponent !== true;
 }
 
 function isCompactTrace(component: unknown): boolean {
-  return isCompactTool(component) || (compactDisplay && component instanceof CustomMessageComponent);
+  return isCompactTool(component) || component instanceof CustomMessageComponent;
+}
+
+function hasThinking(component: unknown): boolean {
+  if (!(component instanceof AssistantMessageComponent)) return false;
+  const message = (component as unknown as { lastMessage?: { content?: Array<{ type?: unknown; thinking?: unknown }> } }).lastMessage;
+  return message?.content?.some((part) => part.type === "thinking" && typeof part.thinking === "string" && part.thinking.trim()) === true;
+}
+
+function isQuietInternal(component: unknown): boolean {
+  if (
+    component instanceof BashExecutionComponent
+    || component instanceof BranchSummaryMessageComponent
+    || component instanceof CompactionSummaryMessageComponent
+  ) return true;
+  const entry = (component as { entry?: { type?: unknown } } | undefined)?.entry;
+  return entry?.type === "custom";
 }
 
 function renderTraceGroups(children: Array<{ render: (width: number) => string[] }>, width: number): string[] {
   const output: string[] = [];
   const traces: TraceRow[] = [];
   let pendingSpacing: string[] = [];
+  let skipQuietSpacing = false;
   let previous: "content" | "trace" | undefined;
 
   const flushTraces = (): void => {
@@ -99,7 +117,8 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
 
   for (const child of children) {
     if (child instanceof Spacer) {
-      pendingSpacing.push(...child.render(width));
+      if (skipQuietSpacing) skipQuietSpacing = false;
+      else pendingSpacing.push(...child.render(width));
       continue;
     }
     if (isCompactTrace(child)) {
@@ -107,7 +126,24 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
       pendingSpacing = [];
       continue;
     }
+    if (isQuietInternal(child)) {
+      pendingSpacing = [];
+      skipQuietSpacing = true;
+      continue;
+    }
+    if (hasThinking(child)) {
+      traces.push({ traceKind: "thinking" });
+      pendingSpacing = [];
+      const lines = child.render(width);
+      if (lines.length > 0) {
+        flushTraces();
+        output.push(...lines);
+        previous = "content";
+      }
+      continue;
+    }
 
+    skipQuietSpacing = false;
     const lines = child.render(width);
     if (lines.length === 0) {
       pendingSpacing.push(...lines);
@@ -130,11 +166,9 @@ function patchContainer(prototype: PatchedContainerPrototype): void {
   const original = prototype.render;
   const render: Render = function (width) {
     const children = (this as { children: Array<{ render: (width: number) => string[] }> }).children;
-    const assistant = [...children].reverse().find((child) => child instanceof AssistantMessageComponent) as
-      | { hideThinkingBlock?: unknown }
-      | undefined;
-    if (assistant) compactDisplay = assistant.hideThinkingBlock === true;
-    return children.some(isCompactTrace) ? renderTraceGroups(children, width) : original.call(this, width);
+    return children.some((child) => isCompactTrace(child) || isQuietInternal(child) || hasThinking(child))
+      ? renderTraceGroups(children, width)
+      : original.call(this, width);
   };
   prototype.__piTinyToolsOriginalContainerRender = original;
   prototype.__piTinyToolsContainerRender = render;
@@ -152,14 +186,17 @@ function patchAssistant(prototype: PatchedAssistantPrototype): void {
   if (prototype.__piTinyToolsSetHideThinking) return;
   const originalRender = prototype.render;
   const render: Render = function (width) {
-    compactDisplay = (this as { hideThinkingBlock?: unknown }).hideThinkingBlock === true;
     const lines = originalRender.call(this, width);
     return lines.every(isBlank) ? [] : lines;
   };
   const originalSetHideThinking = prototype.setHideThinkingBlock;
-  const setHideThinking: SetHideThinking = function (hide) {
-    compactDisplay = hide;
-    originalSetHideThinking.call(this, hide);
+  const setHideThinking: SetHideThinking = function () {
+    originalSetHideThinking.call(this, true);
+  };
+  const originalUpdate = prototype.updateContent;
+  const update: UpdateAssistant = function (message, isStreaming) {
+    (this as { hideThinkingBlock: boolean }).hideThinkingBlock = true;
+    originalUpdate.call(this, message, isStreaming);
   };
   prototype.__piTinyToolsOriginalAssistantRender = originalRender;
   prototype.__piTinyToolsAssistantRender = render;
@@ -167,6 +204,9 @@ function patchAssistant(prototype: PatchedAssistantPrototype): void {
   prototype.__piTinyToolsOriginalSetHideThinking = originalSetHideThinking;
   prototype.__piTinyToolsSetHideThinking = setHideThinking;
   prototype.setHideThinkingBlock = setHideThinking;
+  prototype.__piTinyToolsOriginalUpdate = originalUpdate;
+  prototype.__piTinyToolsUpdate = update;
+  prototype.updateContent = update;
 }
 
 function restoreAssistant(prototype: PatchedAssistantPrototype): void {
@@ -181,16 +221,25 @@ function restoreAssistant(prototype: PatchedAssistantPrototype): void {
   }
   delete prototype.__piTinyToolsOriginalSetHideThinking;
   delete prototype.__piTinyToolsSetHideThinking;
+
+  const originalUpdate = prototype.__piTinyToolsOriginalUpdate;
+  if (originalUpdate && prototype.updateContent === prototype.__piTinyToolsUpdate) prototype.updateContent = originalUpdate;
+  delete prototype.__piTinyToolsOriginalUpdate;
+  delete prototype.__piTinyToolsUpdate;
 }
 
 export default function tinyTools(pi: ExtensionAPI): void {
   pi.registerCommand("trace", {
-    description: "Inspect tool calls, results, and custom messages",
+    description: "Inspect tools, thinking, and custom messages",
     handler: async (_args, ctx) => showTraceInspector(ctx),
   });
-  pi.registerShortcut("ctrl+shift+i", {
-    description: "Open the tool trace inspector",
+  pi.registerShortcut("ctrl+t", {
+    description: "Open the internal trace inspector",
     handler: showTraceInspector,
+  });
+  pi.registerShortcut("ctrl+o", {
+    description: "Tool expansion is disabled by pi-tiny-tools",
+    handler() {},
   });
 
   const toolPrototype = ToolExecutionComponent.prototype as unknown as PatchedPrototype;
@@ -204,8 +253,17 @@ export default function tinyTools(pi: ExtensionAPI): void {
   patchContainer(containerPrototype);
 
   pi.on("session_start", (_event, ctx) => {
+    resetLiveThinking();
     currentTheme = () => ctx.ui.theme;
     ctx.ui.setHiddenThinkingLabel("");
+  });
+
+  pi.on("message_update", (event) => {
+    if (event.message.role === "assistant") updateLiveThinking(event.message);
+  });
+
+  pi.on("message_end", (event) => {
+    if (event.message.role === "assistant") finishLiveThinking(event.message);
   });
 
   pi.on("session_shutdown", () => {
@@ -213,7 +271,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
     restore(customPrototype, "custom");
     restoreAssistant(assistantPrototype);
     restoreContainer(containerPrototype);
+    resetLiveThinking();
     currentTheme = undefined;
-    compactDisplay = false;
   });
 }

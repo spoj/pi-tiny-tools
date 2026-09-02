@@ -16,6 +16,7 @@ function entries(): SessionEntry[] {
         role: "assistant",
         content: [
           { type: "toolCall", id: "call-1", name: "read", arguments: { path: "one.ts" } },
+          { type: "thinking", thinking: "Need to run the tests." },
           { type: "toolCall", id: "call-2", name: "bash", arguments: { command: "npm test" } },
         ],
       },
@@ -88,6 +89,13 @@ test("extracts tool calls, pairs results by id, and includes hidden custom messa
       details: { lines: 2 },
     },
     {
+      id: "assistant:thinking:1",
+      kind: "thinking",
+      name: "think",
+      status: "success",
+      output: "Need to run the tests.",
+    },
+    {
       id: "call-2",
       kind: "tool",
       name: "bash",
@@ -130,23 +138,34 @@ test("inspector navigates items, scrolls content, and respects its render width"
   const tui = fakeTui(12);
   let closed = false;
   const items = extractTraceItems(entries());
-  items[2]!.output = Array.from({ length: 12 }, (_, index) => `line ${index}`).join("\n");
-  items[2]!.details = undefined;
+  items[3]!.output = Array.from({ length: 12 }, (_, index) => `line ${index}`).join("\n");
+  items[3]!.details = undefined;
   const inspector = new TraceInspector(items, theme, tui, () => { closed = true; });
 
   let lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("trace 3/3") && line.includes("browser") && line.includes("hidden")));
+  assert.ok(lines.some((line) => line.includes("trace 4/4") && line.includes("browser") && line.includes("hidden")));
   assert.ok(lines.every((line) => visibleWidth(line) <= 50));
 
   inspector.handleInput("k");
   lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("trace 2/3") && line.includes("bash")));
+  assert.ok(lines.some((line) => line.includes("trace 3/4") && line.includes("bash")));
 
   inspector.handleInput("j");
   inspector.handleInput("G");
   lines = inspector.render(50);
   assert.ok(lines.some((line) => line.includes("line 11")));
-  assert.equal(tui.renders, 3);
+
+  inspector.updateLiveThinking({
+    id: "live-thinking:1",
+    kind: "thinking",
+    name: "think",
+    status: "pending",
+    output: "partial thought",
+  });
+  lines = inspector.render(50);
+  assert.ok(lines.some((line) => line.includes("trace 5/5") && line.includes("thinking") && line.includes("pending")));
+  assert.ok(lines.some((line) => line.includes("partial thought")));
+  assert.equal(tui.renders, 4);
 
   inspector.handleInput("\x1b");
   assert.equal(closed, true);

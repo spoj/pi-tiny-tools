@@ -11,12 +11,20 @@ export type CustomRow = {
   message?: { customType?: unknown };
 };
 
-export type TraceRow = ToolRow | CustomRow;
+export type ThinkingRow = {
+  traceKind: "thinking";
+};
 
-const PREFIX_WIDTH = 4;
+export type TraceRow = ToolRow | CustomRow | ThinkingRow;
+
+const PREFIX_WIDTH = 3;
 
 export function stripTerminalSequences(text: string): string {
   return text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function isThinkingRow(row: TraceRow): row is ThinkingRow {
+  return "traceKind" in row && row.traceKind === "thinking";
 }
 
 function isCustomRow(row: TraceRow): row is CustomRow {
@@ -24,20 +32,22 @@ function isCustomRow(row: TraceRow): row is CustomRow {
 }
 
 function traceName(row: TraceRow): string {
+  if (isThinkingRow(row)) return "think";
   if (isCustomRow(row)) {
     return typeof row.message?.customType === "string" && row.message.customType ? row.message.customType : "extension";
   }
   return typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
 }
 
-function traceColor(row: TraceRow): "accent" | "success" | "error" | "customMessageLabel" {
+function traceColor(row: TraceRow): "accent" | "success" | "error" | "customMessageLabel" | "thinkingText" {
+  if (isThinkingRow(row)) return "thinkingText";
   if (isCustomRow(row)) return "customMessageLabel";
   return row.result?.isError ? "error" : row.result && row.isPartial !== true ? "success" : "accent";
 }
 
 function prefix(theme?: Theme): string {
   const bullet = theme?.fg("dim", "›") ?? "›";
-  return `  ${bullet} `;
+  return ` ${bullet} `;
 }
 
 export function renderTraceGroup(rows: TraceRow[], width: number, theme?: Theme): string[] {
