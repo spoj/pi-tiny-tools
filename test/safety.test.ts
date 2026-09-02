@@ -75,7 +75,8 @@ test("thinking visibility selects compact or native tools without changing expan
   trace.addChild(new Spacer(1));
   trace.addChild(Object.assign(Object.create(CustomMessageComponent.prototype), {
     _expanded: false,
-    render: () => ["  › custom"],
+    message: { customType: "custom-name" },
+    render: () => ["native custom output"],
   }));
   trace.addChild({ render: () => ["", "next message"], invalidate() {} });
   const second = Object.assign(Object.create(ToolExecutionComponent.prototype), {
@@ -85,24 +86,24 @@ test("thinking visibility selects compact or native tools without changing expan
   });
   trace.addChild(second);
   assert.deepEqual(trace.render(80), [
-    "assistant", " ", "", "  › tool tool2", "  › custom", "", "next message", "", "  › second",
+    "assistant", " ", "", "  › tool tool2 custom-name", "", "next message", "", "  › second",
   ]);
 
   tool.expanded = true;
   tool2.expanded = true;
   second.expanded = true;
   assert.deepEqual(trace.render(80), [
-    "assistant", " ", "", "  › tool tool2", "  › custom", "", "next message", "", "  › second",
+    "assistant", " ", "", "  › tool tool2 custom-name", "", "next message", "", "  › second",
   ]);
 
   assistantPrototype.setHideThinkingBlock.call({}, false);
   assert.equal(tool.expanded, true);
   assert.equal(tool2.expanded, true);
   assert.equal(second.expanded, true);
-  assert.ok(trace.render(80).includes("native tool output"));
+  assert.ok(trace.render(80).includes("native custom output"));
   assistantPrototype.setHideThinkingBlock.call({}, true);
   assert.deepEqual(trace.render(80), [
-    "assistant", " ", "", "  › tool tool2", "  › custom", "", "next message", "", "  › second",
+    "assistant", " ", "", "  › tool tool2 custom-name", "", "next message", "", "  › second",
   ]);
 
   handlers.get("session_shutdown")?.();

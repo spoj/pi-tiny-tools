@@ -6,7 +6,7 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer } from "@earendil-works/pi-tui";
-import { renderCustomRow, renderToolGroup, renderToolRow, stripTerminalSequences, type CustomRow, type ToolRow } from "./format.ts";
+import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequences, type CustomRow, type ToolRow, type TraceRow } from "./format.ts";
 
 type Render = (this: unknown, width: number) => string[];
 type PatchedPrototype = {
@@ -84,15 +84,15 @@ function isCompactTrace(component: unknown): boolean {
 
 function renderTraceGroups(children: Array<{ render: (width: number) => string[] }>, width: number): string[] {
   const output: string[] = [];
-  const tools: ToolRow[] = [];
+  const traces: TraceRow[] = [];
   let pendingSpacing: string[] = [];
   let previous: "content" | "trace" | undefined;
 
-  const flushTools = (): void => {
-    if (tools.length === 0) return;
+  const flushTraces = (): void => {
+    if (traces.length === 0) return;
     if (previous === "content") output.push("");
-    output.push(...renderToolGroup(tools, width, currentTheme?.()));
-    tools.length = 0;
+    output.push(...renderTraceGroup(traces, width, currentTheme?.()));
+    traces.length = 0;
     previous = "trace";
   };
 
@@ -101,8 +101,8 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
       pendingSpacing.push(...child.render(width));
       continue;
     }
-    if (isCompactTool(child)) {
-      tools.push(child as unknown as ToolRow);
+    if (isCompactTrace(child)) {
+      traces.push(child as unknown as TraceRow);
       pendingSpacing = [];
       continue;
     }
@@ -113,16 +113,13 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
       continue;
     }
 
-    flushTools();
-    const current = isCompactTrace(child) ? "trace" : "content";
-    if (current === "content") output.push(...pendingSpacing);
-    else if (previous === "content") output.push("");
-    output.push(...lines);
+    flushTraces();
+    output.push(...pendingSpacing, ...lines);
     pendingSpacing = [];
-    previous = current;
+    previous = "content";
   }
 
-  flushTools();
+  flushTraces();
   return [...output, ...pendingSpacing];
 }
 
