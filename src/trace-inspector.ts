@@ -1,5 +1,6 @@
 import type { ExtensionContext, SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
+import { stripTerminalSequences } from "./format.ts";
 
 export type TraceItem = {
   id: string;
@@ -106,9 +107,9 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
 }
 
 function formatValue(value: unknown): string[] {
-  if (typeof value === "string") return value.split("\n");
+  if (typeof value === "string") return stripTerminalSequences(value).split("\n");
   const json = JSON.stringify(value, null, 2);
-  return json === undefined ? [] : json.split("\n");
+  return json === undefined ? [] : stripTerminalSequences(json).split("\n");
 }
 
 export function traceContent(item: TraceItem): string[] {
@@ -226,7 +227,8 @@ export class TraceInspector implements Component {
   }
 
   render(width: number): string[] {
-    if (width < 4) return [truncateToWidth(this.items[this.selected]!.name, width, "")];
+    const name = stripTerminalSequences(this.items[this.selected]!.name);
+    if (width < 4) return [truncateToWidth(name, width, "")];
     const innerWidth = width - 2;
     const bodyWidth = Math.max(1, innerWidth - 2);
     const item = this.items[this.selected]!;
@@ -245,7 +247,7 @@ export class TraceInspector implements Component {
             ? "customMessageLabel"
             : "success";
     const state = item.kind === "custom" ? (item.hidden ? "hidden" : "visible") : item.status;
-    const title = ` trace ${this.selected + 1}/${this.items.length} · ${item.kind} · ${this.theme.fg(color, item.name)} · ${state} `;
+    const title = ` trace ${this.selected + 1}/${this.items.length} · ${item.kind} · ${this.theme.fg(color, name)} · ${state} `;
     const border = (left: string, fill: string, right: string) => this.theme.fg("border", left + fill.repeat(innerWidth) + right);
     const row = (text = "") => this.theme.fg("border", "│") + fit(text, innerWidth) + this.theme.fg("border", "│");
     const lines = [

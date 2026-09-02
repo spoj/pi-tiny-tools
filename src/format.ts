@@ -34,9 +34,11 @@ function isCustomRow(row: TraceRow): row is CustomRow {
 function traceName(row: TraceRow): string {
   if (isThinkingRow(row)) return "think";
   if (isCustomRow(row)) {
-    return typeof row.message?.customType === "string" && row.message.customType ? row.message.customType : "extension";
+    const name = typeof row.message?.customType === "string" && row.message.customType ? row.message.customType : "extension";
+    return stripTerminalSequences(name);
   }
-  return typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
+  const name = typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
+  return stripTerminalSequences(name);
 }
 
 function traceColor(row: TraceRow): "accent" | "success" | "error" | "customMessageLabel" | "thinkingText" {

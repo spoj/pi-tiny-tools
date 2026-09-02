@@ -200,6 +200,33 @@ test("formats all persisted sections", () => {
   ]);
 });
 
+test("inspector strips terminal control sequences from content", () => {
+  const inspector = new TraceInspector([
+    {
+      id: "unsafe",
+      kind: "custom",
+      name: "custom\x1b[2J",
+      status: "success",
+      output: "output\x1b]52;c;secret\x07",
+      details: "details\x1b[2J",
+    },
+  ], theme, fakeTui(), () => {});
+
+  const lines = inspector.render(50);
+  assert.ok(lines.some((line) => line.includes("custom") && !line.includes("\x1b")));
+  assert.ok(lines.some((line) => line.includes("output") && !line.includes("secret")));
+  assert.ok(lines.some((line) => line.includes("details")));
+  assert.ok(traceContent({
+    id: "unsafe",
+    kind: "custom",
+    name: "custom\x1b[2J",
+    status: "success",
+    output: "output\x1b]52;c;secret\x07",
+    details: "details\x1b[2J",
+  }).every((line) => !line.includes("\x1b")));
+  assert.ok(lines.slice(3, 9).every((line) => !line.includes("\x1b")));
+});
+
 test("inspector navigates items, scrolls content, and respects its render width", () => {
   const tui = fakeTui(12);
   let closed = false;

@@ -21,6 +21,18 @@ test("trace groups wrap tool and custom names together", () => {
   assert.ok(lines.every((line) => visibleWidth(line) <= 24));
 });
 
+test("trace names strip terminal control sequences before styling", () => {
+  const osc52 = "malicious\x1b]52;c;secret\x07";
+  const csi = "tool\x1b[2J";
+  const lines = renderTraceGroup([
+    { toolName: csi },
+    { message: { customType: osc52 } },
+  ], 80);
+
+  assert.deepEqual(lines, [" › tool malicious"]);
+  assert.ok(lines.every((line) => !line.includes("\x1b")));
+});
+
 test("trace names retain their individual colors and use a dim marker", () => {
   const colors: Array<[string, string]> = [];
   const theme = {
