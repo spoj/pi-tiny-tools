@@ -11,7 +11,15 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequences, type CustomRow, type ToolRow, type TraceRow } from "./format.ts";
-import { finishLiveThinking, resetLiveThinking, showTraceInspector, updateLiveThinking } from "./trace-inspector.ts";
+import {
+  finishLiveAssistant,
+  finishLiveTool,
+  resetLiveItems,
+  showTraceInspector,
+  startLiveTool,
+  updateLiveAssistant,
+  updateLiveTool,
+} from "./trace-inspector.ts";
 
 let currentTheme: (() => Theme | undefined) | undefined;
 let tuiMode = false;
@@ -177,18 +185,27 @@ export default function tinyTools(pi: ExtensionAPI): void {
   patchUsers++;
 
   pi.on("session_start", (_event, ctx) => {
-    resetLiveThinking();
+    resetLiveItems();
     tuiMode = ctx.mode === "tui";
     currentTheme = () => ctx.ui.theme;
     ctx.ui.setHiddenThinkingLabel("");
   });
 
   pi.on("message_update", (event) => {
-    if (event.message.role === "assistant") updateLiveThinking(event.message);
+    if (event.message.role === "assistant") updateLiveAssistant(event.message);
+  });
+  pi.on("tool_execution_start", (event) => {
+    startLiveTool(event.toolCallId, event.toolName, event.args);
+  });
+  pi.on("tool_execution_update", (event) => {
+    updateLiveTool(event.toolCallId, event.toolName, event.args, event.partialResult);
+  });
+  pi.on("tool_execution_end", (event) => {
+    finishLiveTool(event.toolCallId, event.toolName, event.result, event.isError);
   });
 
   pi.on("message_end", (event, ctx) => {
-    if (event.message.role === "assistant") finishLiveThinking(event.message);
+    if (event.message.role === "assistant") finishLiveAssistant(event.message);
     if (ctx.mode === "tui" && event.message.role === "custom" && !event.message.display) {
       return { message: { ...event.message, display: true } };
     }
@@ -202,6 +219,6 @@ export default function tinyTools(pi: ExtensionAPI): void {
       currentTheme = undefined;
       tuiMode = false;
     }
-    resetLiveThinking();
+    resetLiveItems();
   });
 }

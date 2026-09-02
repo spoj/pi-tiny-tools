@@ -248,7 +248,7 @@ test("inspector navigates items, scrolls content, and respects its render width"
   lines = inspector.render(50);
   assert.ok(lines.some((line) => line.includes("line 11")));
 
-  inspector.updateLiveThinking({
+  inspector.updateItem({
     id: "live-thinking:1",
     kind: "thinking",
     name: "think",
@@ -258,7 +258,31 @@ test("inspector navigates items, scrolls content, and respects its render width"
   lines = inspector.render(50);
   assert.ok(lines.some((line) => line.includes("trace 5/5") && line.includes("thinking") && line.includes("pending")));
   assert.ok(lines.some((line) => line.includes("partial thought")));
-  assert.equal(tui.renders, 4);
+
+  inspector.updateItem({
+    id: "call-live",
+    kind: "tool",
+    name: "write",
+    status: "pending",
+    call: { id: "call-live", name: "write", arguments: { path: "live.ts" } },
+    output: "partial output",
+  });
+  lines = inspector.render(50);
+  assert.ok(lines.some((line) => line.includes("trace 6/6") && line.includes("write") && line.includes("pending")));
+  assert.ok(lines.some((line) => line.includes("partial output")));
+
+  inspector.updateItem({
+    id: "call-live",
+    kind: "tool",
+    name: "write",
+    status: "success",
+    call: { id: "call-live", name: "write", arguments: { path: "live.ts" } },
+    output: "done",
+  });
+  lines = inspector.render(50);
+  assert.ok(lines.some((line) => line.includes("trace 6/6") && line.includes("success")));
+  assert.ok(lines.some((line) => line.includes("done")));
+  assert.equal(tui.renders, 6);
 
   inspector.handleInput("\x1b");
   assert.equal(closed, true);

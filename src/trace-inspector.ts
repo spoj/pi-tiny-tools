@@ -133,15 +133,31 @@ function fit(text: string, width: number): string {
   return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
 }
 
-type ThinkingMessage = {
+type LiveAssistantMessage = {
   timestamp: number;
-  content: Array<{ type: string; thinking?: string }>;
+  content: Array<{
+    type: string;
+    thinking?: string;
+    id?: string;
+    name?: string;
+    arguments?: unknown;
+  }>;
 };
 
-let liveThinking: TraceItem | undefined;
+type LiveToolResult = {
+  content: Content;
+  details?: unknown;
+};
+
+const liveItems = new Map<string, TraceItem>();
 let activeInspector: TraceInspector | undefined;
 
-function thinkingText(message: ThinkingMessage): string {
+function publishLive(item: TraceItem): void {
+  liveItems.set(item.id, item);
+  activeInspector?.updateItem(item);
+}
+
+function thinkingText(message: LiveAssistantMessage): string {
   return message.content
     .filter((part): part is { type: string; thinking: string } => part.type === "thinking" && typeof part.thinking === "string")
     .map((part) => part.thinking)
@@ -149,28 +165,79 @@ function thinkingText(message: ThinkingMessage): string {
     .join("\n\n");
 }
 
-export function updateLiveThinking(message: ThinkingMessage): void {
+export function updateLiveAssistant(message: LiveAssistantMessage): void {
   const output = thinkingText(message);
-  if (!output) return;
-  const id = `live-thinking:${message.timestamp}`;
-  if (liveThinking?.id !== id) {
-    liveThinking = { id, kind: "thinking", name: "think", status: "pending", output };
-  } else {
-    liveThinking.output = output;
+  if (output) {
+    const id = `live-thinking:${message.timestamp}`;
+    publishLive({ id, kind: "thinking", name: "think", status: "pending", output });
   }
-  activeInspector?.updateLiveThinking(liveThinking);
+
+  for (const part of message.content) {
+    if (part.type !== "toolCall" || part.id === undefined || part.name === undefined) continue;
+    const current = liveItems.get(part.id);
+    publishLive({
+      id: part.id,
+      kind: "tool",
+      name: part.name,
+      status: current?.status ?? "pending",
+      call: { id: ellipsizeId(part.id), name: part.name, arguments: part.arguments },
+      output: current?.output,
+      result: current?.result,
+      details: current?.details,
+    });
+  }
 }
 
-export function finishLiveThinking(message: ThinkingMessage): void {
-  updateLiveThinking(message);
-  if (!liveThinking || liveThinking.id !== `live-thinking:${message.timestamp}`) return;
-  liveThinking.status = "success";
-  activeInspector?.updateLiveThinking(liveThinking);
-  liveThinking = undefined;
+export function finishLiveAssistant(message: LiveAssistantMessage): void {
+  updateLiveAssistant(message);
+  const id = `live-thinking:${message.timestamp}`;
+  const thinking = liveItems.get(id);
+  if (!thinking) return;
+  publishLive({ ...thinking, status: "success" });
+  liveItems.delete(id);
 }
 
-export function resetLiveThinking(): void {
-  liveThinking = undefined;
+export function startLiveTool(toolCallId: string, toolName: string, args: unknown): void {
+  const current = liveItems.get(toolCallId);
+  publishLive({
+    ...current,
+    id: toolCallId,
+    kind: "tool",
+    name: toolName,
+    status: "pending",
+    call: { id: ellipsizeId(toolCallId), name: toolName, arguments: args },
+  });
+}
+
+export function updateLiveTool(toolCallId: string, toolName: string, args: unknown, result: LiveToolResult): void {
+  publishLive({
+    ...liveItems.get(toolCallId),
+    id: toolCallId,
+    kind: "tool",
+    name: toolName,
+    status: "pending",
+    call: { id: ellipsizeId(toolCallId), name: toolName, arguments: args },
+    output: contentValue(result.content),
+    details: result.details,
+  });
+}
+
+export function finishLiveTool(toolCallId: string, toolName: string, result: LiveToolResult, isError: boolean): void {
+  const current = liveItems.get(toolCallId)!;
+  publishLive({
+    ...current,
+    id: toolCallId,
+    kind: "tool",
+    name: toolName,
+    status: isError ? "error" : "success",
+    output: contentValue(result.content),
+    result: { toolCallId: ellipsizeId(toolCallId), toolName, isError },
+    details: result.details,
+  });
+}
+
+export function resetLiveItems(): void {
+  liveItems.clear();
   activeInspector = undefined;
 }
 
@@ -190,7 +257,7 @@ export class TraceInspector implements Component {
     this.selected = items.length - 1;
   }
 
-  updateLiveThinking(item: TraceItem): void {
+  updateItem(item: TraceItem): void {
     const index = this.items.findIndex((candidate) => candidate.id === item.id);
     if (index === -1) {
       const wasNewest = this.selected === this.items.length - 1;
@@ -277,7 +344,9 @@ export class TraceInspector implements Component {
 export async function showTraceInspector(ctx: ExtensionContext): Promise<void> {
   if (ctx.mode !== "tui") return;
   const items = extractTraceItems(ctx.sessionManager.getBranch());
-  if (liveThinking && !items.some((item) => item.id === liveThinking?.id)) items.push(liveThinking);
+  for (const item of liveItems.values()) {
+    if (!items.some((candidate) => candidate.id === item.id)) items.push(item);
+  }
   if (items.length === 0) {
     ctx.ui.notify("No tools, thinking, or custom messages in the current branch", "info");
     return;
