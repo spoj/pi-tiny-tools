@@ -298,6 +298,17 @@ export function finishLiveTool(toolCallId: string, toolName: string, result: Liv
   });
 }
 
+export function forgetLiveTool(toolCallId: string): void {
+  liveItems.delete(toolCallId);
+}
+
+export function pruneLiveItems(entries: SessionEntry[]): void {
+  const retained = new Set(extractTraceItems(entries).map((item) => item.id));
+  for (const id of [...liveItems.keys()]) {
+    if (!retained.has(id)) liveItems.delete(id);
+  }
+}
+
 export function resetLiveItems(): void {
   liveItems.clear();
   activeInspector = undefined;

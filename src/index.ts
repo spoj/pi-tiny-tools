@@ -4,7 +4,7 @@ import {
   BranchSummaryMessageComponent,
   CompactionSummaryMessageComponent,
   CustomMessageComponent,
-  SessionManager,
+  InteractiveMode,
   SkillInvocationMessageComponent,
   ToolExecutionComponent,
   type ExtensionAPI,
@@ -15,6 +15,8 @@ import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequence
 import {
   finishLiveAssistant,
   finishLiveTool,
+  forgetLiveTool,
+  pruneLiveItems,
   resetLiveItems,
   showTraceInspector,
   startLiveTool,
@@ -23,7 +25,6 @@ import {
 } from "./trace-inspector.ts";
 
 let currentTheme: (() => Theme | undefined) | undefined;
-let tuiMode = false;
 let patchUsers = 0;
 let restorePatches: (() => void)[] | undefined;
 
@@ -58,6 +59,8 @@ type ShellComponent = {
   status: "running" | "complete" | "cancelled" | "error";
   tinyToolsShellMarker?: "!" | "!!";
 };
+
+type InteractiveMessage = { role?: unknown; display?: unknown };
 
 function shellMarker(component: ShellComponent): "!" | "!!" {
   if (component.tinyToolsShellMarker) return component.tinyToolsShellMarker;
@@ -245,18 +248,25 @@ export default function tinyTools(pi: ExtensionAPI): void {
           ? renderTraceGroups(this.children, width)
           : original.call(this, width);
       }),
-      patchMethod(SessionManager.prototype, "buildContextEntries", (original) => function (this: SessionManager) {
-        return original.call(this).map((entry) =>
-          entry.type === "custom_message" && tuiMode && !entry.display ? { ...entry, display: true } : entry,
-        );
-      }),
+      patchMethod(
+        InteractiveMode.prototype as unknown as {
+          addMessageToChat(this: unknown, message: InteractiveMessage, options?: unknown): void;
+        },
+        "addMessageToChat",
+        (original) => function (this: unknown, message: InteractiveMessage, options?: unknown): void {
+          if (message.role === "custom" && !message.display) {
+            original.call(this, { ...message, display: true }, options);
+            return;
+          }
+          original.call(this, message, options);
+        },
+      ),
     ];
   }
   patchUsers++;
 
   pi.on("session_start", (_event, ctx) => {
     resetLiveItems();
-    tuiMode = ctx.mode === "tui";
     currentTheme = () => ctx.ui.theme;
     ctx.ui.setHiddenThinkingLabel("");
   });
@@ -274,11 +284,13 @@ export default function tinyTools(pi: ExtensionAPI): void {
     finishLiveTool(event.toolCallId, event.toolName, event.result, event.isError);
   });
 
-  pi.on("message_end", (event, ctx) => {
+  pi.on("message_end", (event) => {
     if (event.message.role === "assistant") finishLiveAssistant(event.message);
-    if (ctx.mode === "tui" && event.message.role === "custom" && !event.message.display) {
-      return { message: { ...event.message, display: true } };
-    }
+    if (event.message.role === "toolResult") forgetLiveTool(event.message.toolCallId);
+  });
+
+  pi.on("session_tree", (_event, ctx) => {
+    pruneLiveItems(ctx.sessionManager.getBranch());
   });
 
   pi.on("session_shutdown", () => {
@@ -287,7 +299,6 @@ export default function tinyTools(pi: ExtensionAPI): void {
       for (const restore of restorePatches!.reverse()) restore();
       restorePatches = undefined;
       currentTheme = undefined;
-      tuiMode = false;
     }
     resetLiveItems();
   });
