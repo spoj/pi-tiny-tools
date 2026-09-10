@@ -58,12 +58,12 @@ test("internal traces stay compact while native expansion state changes", () => 
 
   tinyTools(pi);
 
-  assert.notEqual(toolPrototype.render, nativeToolRender);
+  assert.equal(toolPrototype.render, nativeToolRender);
   assert.notEqual(bashPrototype.appendOutput, nativeBashAppendOutput);
   assert.notEqual(bashPrototype.setComplete, nativeBashSetComplete);
-  assert.notEqual(customPrototype.render, nativeCustomRender);
+  assert.equal(Object.hasOwn(CustomMessageComponent.prototype, "render"), false);
   assert.notEqual(assistantPrototype.render, nativeAssistantRender);
-  assert.notEqual(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
+  assert.equal(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
   assert.notEqual(assistantPrototype.updateContent, nativeUpdateContent);
   assert.equal(userPrototype.render, nativeUserRender);
   assert.notEqual(containerPrototype.render, nativeContainerRender);
@@ -121,9 +121,11 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.ok(resumed[0] instanceof CustomMessageComponent);
 
   let hiddenThinkingLabel = "Thinking...";
+  const colors: Array<[string, string]> = [];
   handlers.get("session_start")?.({}, {
     mode: "tui",
     ui: {
+      theme: { fg: (color: string, text: string) => { colors.push([color, text]); return text; } },
       setHiddenThinkingLabel: (label: string) => { hiddenThinkingLabel = label; },
     },
   });
@@ -172,6 +174,10 @@ test("internal traces stay compact while native expansion state changes", () => 
     render: () => ["native tool2 output"],
   });
   trace.addChild(tool2);
+  trace.addChild(Object.assign(Object.create(ToolExecutionComponent.prototype), {
+    hideComponent: true,
+    toolName: "hidden-tool",
+  }));
   trace.addChild(new Spacer(1));
   trace.addChild(Object.assign(Object.create(CustomMessageComponent.prototype), {
     _expanded: false,
@@ -219,6 +225,17 @@ test("internal traces stay compact while native expansion state changes", () => 
 
   const compact = [" › think tool tool2 custom-name ! !! branch summary compaction state review", "", "next message", "", " › second"];
   assert.deepEqual(trace.render(80), compact);
+  assert.ok(colors.some(([color, text]) => color === "accent" && text === "tool"));
+  for (const [result, isPartial, expectedColor] of [
+    [{ isError: false }, false, "success"],
+    [{ isError: false }, true, "accent"],
+    [{ isError: true }, true, "error"],
+  ] as const) {
+    Object.assign(tool, { result, isPartial });
+    colors.length = 0;
+    assert.deepEqual(trace.render(80), compact);
+    assert.ok(colors.some(([color, text]) => color === expectedColor && text === "tool"));
+  }
 
   const billing = new Container();
   billing.addChild(new Text("Compaction: 1k tokens billed", 1, 0));
@@ -249,9 +266,7 @@ test("internal traces stay compact while native expansion state changes", () => 
 
 test("duplicate initialization restores shared patches after both shutdowns", () => {
   initTheme();
-  const toolPrototype = ToolExecutionComponent.prototype as unknown as { render: unknown };
   const containerPrototype = Container.prototype as unknown as { render: unknown };
-  const nativeToolRender = toolPrototype.render;
   const nativeContainerRender = containerPrototype.render;
   const shutdowns: Array<() => void> = [];
   const pi = {
@@ -266,14 +281,11 @@ test("duplicate initialization restores shared patches after both shutdowns", ()
   tinyTools(pi);
 
   assert.equal(shutdowns.length, 2);
-  assert.notEqual(toolPrototype.render, nativeToolRender);
   assert.notEqual(containerPrototype.render, nativeContainerRender);
 
   shutdowns[0]!();
-  assert.notEqual(toolPrototype.render, nativeToolRender);
   assert.notEqual(containerPrototype.render, nativeContainerRender);
 
   shutdowns[1]!();
-  assert.equal(toolPrototype.render, nativeToolRender);
   assert.equal(containerPrototype.render, nativeContainerRender);
 });

@@ -1,27 +1,16 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-export type ToolRow = {
-  toolName?: unknown;
-  result?: { isError?: unknown };
-  isPartial?: unknown;
-};
-
-export type CustomRow = {
-  message?: { customType?: unknown };
-};
-
-export type ThinkingRow = {
-  traceKind: "thinking";
-};
-
-export type NamedRow = {
-  traceKind: "named";
+export type TraceRow = {
   name: string;
-  color: "accent" | "success" | "error" | "customMessageLabel";
+  color: "accent" | "success" | "error" | "customMessageLabel" | "thinkingText";
 };
 
-export type TraceRow = ToolRow | CustomRow | ThinkingRow | NamedRow;
+export const TRACE_NAMES = {
+  thinking: "think",
+  compaction: "compaction",
+  branchSummary: "branch summary",
+} as const;
 
 const PREFIX_WIDTH = 3;
 
@@ -81,36 +70,6 @@ export function stripTerminalSequences(text: string): string {
   return output + text.slice(start);
 }
 
-function isThinkingRow(row: TraceRow): row is ThinkingRow {
-  return "traceKind" in row && row.traceKind === "thinking";
-}
-
-function isNamedRow(row: TraceRow): row is NamedRow {
-  return "traceKind" in row && row.traceKind === "named";
-}
-
-function isCustomRow(row: TraceRow): row is CustomRow {
-  return "message" in row;
-}
-
-function traceName(row: TraceRow): string {
-  if (isThinkingRow(row)) return "think";
-  if (isNamedRow(row)) return stripTerminalSequences(row.name);
-  if (isCustomRow(row)) {
-    const name = typeof row.message?.customType === "string" && row.message.customType ? row.message.customType : "extension";
-    return stripTerminalSequences(name);
-  }
-  const name = typeof row.toolName === "string" && row.toolName ? row.toolName : "tool";
-  return stripTerminalSequences(name);
-}
-
-function traceColor(row: TraceRow): "accent" | "success" | "error" | "customMessageLabel" | "thinkingText" {
-  if (isThinkingRow(row)) return "thinkingText";
-  if (isNamedRow(row)) return row.color;
-  if (isCustomRow(row)) return "customMessageLabel";
-  return row.result?.isError ? "error" : row.result && row.isPartial !== true ? "success" : "accent";
-}
-
 function prefix(theme?: Theme): string {
   const bullet = theme?.fg("dim", "›") ?? "›";
   return ` ${bullet} `;
@@ -122,17 +81,12 @@ function trimWrappedSeparator(line: string): string {
 
 export function renderTraceGroup(rows: TraceRow[], width: number, theme?: Theme): string[] {
   if (rows.length === 0) return [];
-  const names = rows.map((row) => theme?.fg(traceColor(row), traceName(row)) ?? traceName(row)).join(" ");
+  const names = rows.map((row) => {
+    const name = stripTerminalSequences(row.name);
+    return theme?.fg(row.color, name) ?? name;
+  }).join(" ");
   if (width <= PREFIX_WIDTH) return [truncateToWidth(`${prefix(theme)}${names}`, Math.max(1, width))];
   return wrapTextWithAnsi(names, width - PREFIX_WIDTH).map((line, index) =>
     `${index === 0 ? prefix(theme) : " ".repeat(PREFIX_WIDTH)}${trimWrappedSeparator(line)}`,
   );
-}
-
-export function renderToolRow(row: ToolRow, width: number, theme?: Theme): string[] {
-  return renderTraceGroup([row], width, theme);
-}
-
-export function renderCustomRow(row: CustomRow, width: number, theme?: Theme): string[] {
-  return renderTraceGroup([row], width, theme);
 }

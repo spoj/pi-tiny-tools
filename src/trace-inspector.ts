@@ -1,6 +1,6 @@
 import { parseSkillBlock, type ExtensionContext, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
-import { stripTerminalSequences } from "./format.ts";
+import { stripTerminalSequences, TRACE_NAMES } from "./format.ts";
 
 export type TraceItem = {
   id: string;
@@ -40,7 +40,7 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
       items.push({
         id: entry.id,
         kind: "summary",
-        name: "compaction",
+        name: TRACE_NAMES.compaction,
         status: "success",
         details: entry,
       });
@@ -51,7 +51,7 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
       items.push({
         id: entry.id,
         kind: "summary",
-        name: "branch summary",
+        name: TRACE_NAMES.branchSummary,
         status: "success",
         details: entry,
       });
@@ -128,7 +128,7 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
             items.push({
               id: `${entry.id}:thinking:${index}`,
               kind: "thinking",
-              name: "think",
+              name: TRACE_NAMES.thinking,
               status: "success",
               output: blocks.join("\n\n"),
             });
@@ -231,7 +231,7 @@ export function updateLiveAssistant(message: LiveAssistantMessage): void {
   const output = thinkingText(message);
   if (output) {
     const id = `live-thinking:${message.timestamp}`;
-    publishLive({ id, kind: "thinking", name: "think", status: "pending", output });
+    publishLive({ id, kind: "thinking", name: TRACE_NAMES.thinking, status: "pending", output });
   }
 
   for (const part of message.content) {

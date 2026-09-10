@@ -2,20 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequences } from "../src/format.ts";
+import { renderTraceGroup, stripTerminalSequences } from "../src/format.ts";
 
-test("tool and custom rows show only their names", () => {
-  assert.deepEqual(renderToolRow({ toolName: "read", result: { isError: false } }, 40), [" › read"]);
-  assert.deepEqual(renderCustomRow({ message: { customType: "pi-subagents" } }, 40), [" › pi-subagents"]);
+test("trace rows show only their names", () => {
+  assert.deepEqual(renderTraceGroup([{ name: "read", color: "accent" }], 40), [" › read"]);
+  assert.deepEqual(renderTraceGroup([{ name: "pi-subagents", color: "customMessageLabel" }], 40), [" › pi-subagents"]);
 });
 
-test("trace groups wrap tool and custom names together", () => {
+test("trace groups wrap names together", () => {
   const lines = renderTraceGroup([
-    { toolName: "read" },
-    { toolName: "bash" },
-    { traceKind: "thinking" },
-    { message: { customType: "pi-subagents" } },
-    { toolName: "write" },
+    { name: "read", color: "accent" },
+    { name: "bash", color: "accent" },
+    { name: "think", color: "thinkingText" },
+    { name: "pi-subagents", color: "customMessageLabel" },
+    { name: "write", color: "accent" },
   ], 24);
   assert.deepEqual(lines, [" › read bash think", "   pi-subagents write"]);
   assert.ok(lines.every((line) => visibleWidth(line) <= 24));
@@ -25,8 +25,8 @@ test("trace names strip terminal control sequences before styling", () => {
   const osc52 = "malicious\x1b]52;c;secret\x07";
   const csi = "tool\x1b[2J";
   const lines = renderTraceGroup([
-    { toolName: csi },
-    { message: { customType: osc52 } },
+    { name: csi, color: "accent" },
+    { name: osc52, color: "customMessageLabel" },
   ], 80);
 
   assert.deepEqual(lines, [" › tool malicious"]);
@@ -44,10 +44,10 @@ test("strips 7-bit and 8-bit terminal strings while preserving ordinary text", (
   assert.equal(stripTerminalSequences(text), "before\n\tafterdcsapcosc");
 
   const lines = renderTraceGroup([
-    { toolName: "reset\x1bc" },
-    { message: { customType: "dcs\x1bPsecret\x1b\\" } },
-    { toolName: "apc\x1b_secret\x1b\\" },
-    { message: { customType: "osc\x9dsecret\x9c" } },
+    { name: "reset\x1bc", color: "accent" },
+    { name: "dcs\x1bPsecret\x1b\\", color: "customMessageLabel" },
+    { name: "apc\x1b_secret\x1b\\", color: "accent" },
+    { name: "osc\x9dsecret\x9c", color: "customMessageLabel" },
   ], 80);
   assert.deepEqual(lines, [" › reset dcs apc osc"]);
   assert.ok(lines.every((line) => !line.includes("\x1b") && !line.includes("\x9d")));
@@ -60,9 +60,9 @@ test("styled trace names align after wrapping", () => {
     },
   } as unknown as Theme;
   const lines = renderTraceGroup([
-    { toolName: "bash" },
-    { toolName: "bash" },
-    { toolName: "bash" },
+    { name: "bash", color: "accent" },
+    { name: "bash", color: "accent" },
+    { name: "bash", color: "accent" },
   ], 12, ansiTheme);
 
   assert.deepEqual(lines.map(stripTerminalSequences), [" › bash bash", "   bash"]);
@@ -78,11 +78,11 @@ test("trace names retain their individual colors and use a dim marker", () => {
     },
   } as unknown as Theme;
   renderTraceGroup([
-    { toolName: "pending" },
-    { toolName: "done", result: { isError: false } },
-    { toolName: "failed", result: { isError: true } },
-    { traceKind: "thinking" },
-    { message: { customType: "extension" } },
+    { name: "pending", color: "accent" },
+    { name: "done", color: "success" },
+    { name: "failed", color: "error" },
+    { name: "think", color: "thinkingText" },
+    { name: "extension", color: "customMessageLabel" },
   ], 80, theme);
   assert.ok(colors.some(([color, text]) => color === "dim" && text === "›"));
   assert.ok(colors.some(([color, text]) => color === "accent" && text === "pending"));

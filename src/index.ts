@@ -11,7 +11,7 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
-import { renderCustomRow, renderToolRow, renderTraceGroup, stripTerminalSequences, type CustomRow, type ToolRow, type TraceRow } from "./format.ts";
+import { renderTraceGroup, stripTerminalSequences, TRACE_NAMES, type TraceRow } from "./format.ts";
 import {
   finishLiveAssistant,
   finishLiveTool,
@@ -48,11 +48,6 @@ function isBlank(line: string): boolean {
   return stripTerminalSequences(line).trim() === "";
 }
 
-function isCompactTool(component: unknown): component is ToolExecutionComponent {
-  return component instanceof ToolExecutionComponent
-    && (component as unknown as { hideComponent?: unknown }).hideComponent !== true;
-}
-
 type ShellComponent = {
   command: string;
   contentContainer: { children: unknown[] };
@@ -79,41 +74,46 @@ function customEntry(component: unknown): { customType?: unknown } | undefined {
   return entry?.type === "custom" ? entry : undefined;
 }
 
-function isMinimized(component: unknown): boolean {
-  return isCompactTool(component)
-    || component instanceof CustomMessageComponent
-    || component instanceof BashExecutionComponent
-    || component instanceof BranchSummaryMessageComponent
-    || component instanceof CompactionSummaryMessageComponent
-    || component instanceof SkillInvocationMessageComponent
-    || customEntry(component) !== undefined;
-}
-
-function compactTraceRow(component: unknown): TraceRow {
+function traceRow(component: unknown): TraceRow | undefined {
+  if (component instanceof ToolExecutionComponent) {
+    if ((component as unknown as { hideComponent?: unknown }).hideComponent === true) return undefined;
+    const tool = component as unknown as { toolName?: unknown; result?: { isError?: unknown }; isPartial?: unknown };
+    const name = typeof tool.toolName === "string" && tool.toolName ? tool.toolName : "tool";
+    return {
+      name,
+      color: tool.result?.isError ? "error" : tool.result && tool.isPartial !== true ? "success" : "accent",
+    };
+  }
+  if (component instanceof CustomMessageComponent) {
+    const customType = (component as unknown as { message?: { customType?: unknown } }).message?.customType;
+    return {
+      name: typeof customType === "string" && customType ? customType : "extension",
+      color: "customMessageLabel",
+    };
+  }
   if (component instanceof BashExecutionComponent) {
     const shell = component as unknown as ShellComponent;
     return {
-      traceKind: "named",
       name: shellMarker(shell),
       color: shell.status === "running" ? "accent" : shell.status === "complete" ? "success" : "error",
     };
   }
   if (component instanceof BranchSummaryMessageComponent) {
-    return { traceKind: "named", name: "branch summary", color: "customMessageLabel" };
+    return { name: TRACE_NAMES.branchSummary, color: "customMessageLabel" };
   }
   if (component instanceof CompactionSummaryMessageComponent) {
-    return { traceKind: "named", name: "compaction", color: "customMessageLabel" };
+    return { name: TRACE_NAMES.compaction, color: "customMessageLabel" };
   }
   if (component instanceof SkillInvocationMessageComponent) {
     const skill = component as unknown as { skillBlock: { name: string } };
-    return { traceKind: "named", name: skill.skillBlock.name, color: "customMessageLabel" };
+    return { name: skill.skillBlock.name, color: "customMessageLabel" };
   }
   const entry = customEntry(component);
   if (entry) {
     const name = typeof entry.customType === "string" && entry.customType ? entry.customType : "extension";
-    return { traceKind: "named", name, color: "customMessageLabel" };
+    return { name, color: "customMessageLabel" };
   }
-  return component as TraceRow;
+  return undefined;
 }
 
 function hasThinking(component: unknown): boolean {
@@ -149,8 +149,9 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
       if (!skipSilentSpacing) pendingSpacing.push(...child.render(width));
       continue;
     }
-    if (isMinimized(child)) {
-      traces.push(compactTraceRow(child));
+    const row = traceRow(child);
+    if (row) {
+      traces.push(row);
       pendingSpacing = [];
       skipSilentSpacing = false;
       silentTail = false;
@@ -165,7 +166,7 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
     skipSilentSpacing = false;
     silentTail = false;
     if (hasThinking(child)) {
-      traces.push({ traceKind: "thinking" });
+      traces.push({ name: TRACE_NAMES.thinking, color: "thinkingText" });
       pendingSpacing = [];
       const lines = child.render(width);
       if (lines.length > 0) {
@@ -219,21 +220,11 @@ export default function tinyTools(pi: ExtensionAPI): void {
         rememberShellMarker(this);
         original.apply(this, args);
       }),
-      patchMethod(ToolExecutionComponent.prototype, "render", (original) => function (this: ToolExecutionComponent, width: number) {
-        if ((this as unknown as { hideComponent?: unknown }).hideComponent === true) return original.call(this, width);
-        return renderToolRow(this as unknown as ToolRow, width, currentTheme?.());
-      }),
-      patchMethod(CustomMessageComponent.prototype, "render", () => function (this: CustomMessageComponent, width: number) {
-        return renderCustomRow(this as unknown as CustomRow, width, currentTheme?.());
-      }),
       patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
         const lines = original.call(this, width);
         if (!hasThinking(this)) return lines.every(isBlank) ? [] : lines;
         const firstContent = lines.findIndex((line) => !isBlank(line));
         return firstContent === -1 ? [] : lines.slice(firstContent);
-      }),
-      patchMethod(AssistantMessageComponent.prototype, "setHideThinkingBlock", (original) => function (this: AssistantMessageComponent) {
-        original.call(this, true);
       }),
       patchMethod(AssistantMessageComponent.prototype, "updateContent", (original) => function (
         this: AssistantMessageComponent,
@@ -244,7 +235,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
         original.call(this, message, isStreaming);
       }),
       patchMethod(Container.prototype, "render", (original) => function (this: Container, width: number) {
-        return this.children.some((child) => isMinimized(child) || isSilent(child) || hasThinking(child))
+        return this.children.some((child) => traceRow(child) !== undefined || isSilent(child) || hasThinking(child))
           ? renderTraceGroups(this.children, width)
           : original.call(this, width);
       }),
