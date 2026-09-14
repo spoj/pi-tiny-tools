@@ -32,6 +32,8 @@ test("internal traces stay compact while native expansion state changes", () => 
   const nativeToolRender = toolPrototype.render;
   const nativeBashAppendOutput = bashPrototype.appendOutput;
   const nativeBashSetComplete = bashPrototype.setComplete;
+  const nativeBashSetExpanded = bashPrototype.setExpanded;
+  const nativeBashInvalidate = bashPrototype.invalidate;
   const nativeCustomRender = customPrototype.render;
   const nativeAssistantRender = assistantPrototype.render;
   const nativeSetHideThinking = assistantPrototype.setHideThinkingBlock;
@@ -61,6 +63,8 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.equal(toolPrototype.render, nativeToolRender);
   assert.notEqual(bashPrototype.appendOutput, nativeBashAppendOutput);
   assert.notEqual(bashPrototype.setComplete, nativeBashSetComplete);
+  assert.notEqual(bashPrototype.setExpanded, nativeBashSetExpanded);
+  assert.notEqual(bashPrototype.invalidate, nativeBashInvalidate);
   assert.equal(Object.hasOwn(CustomMessageComponent.prototype, "render"), false);
   assert.notEqual(assistantPrototype.render, nativeAssistantRender);
   assert.equal(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);
@@ -122,14 +126,36 @@ test("internal traces stay compact while native expansion state changes", () => 
 
   let hiddenThinkingLabel = "Thinking...";
   const colors: Array<[string, string]> = [];
+  const bashUi = { requestRender() {} } as ConstructorParameters<typeof BashExecutionComponent>[1];
+  const expandedExcludedShell = new BashExecutionComponent("pwd", bashUi, true);
+  const initialShellHeader = (expandedExcludedShell as unknown as { contentContainer: { children: Array<{ text?: unknown }> } }).contentContainer.children[0]?.text;
+  const invalidatedExcludedShell = new BashExecutionComponent("pwd", bashUi, true);
   handlers.get("session_start")?.({}, {
     mode: "tui",
     ui: {
-      theme: { fg: (color: string, text: string) => { colors.push([color, text]); return text; } },
+      theme: {
+        bold: (text: string) => text,
+        fg: (color: string, text: string) => {
+          colors.push([color, text]);
+          return color === "dim" && text === "$ pwd" ? initialShellHeader as string : text;
+        },
+      },
       setHiddenThinkingLabel: (label: string) => { hiddenThinkingLabel = label; },
     },
   });
   assert.equal(hiddenThinkingLabel, "");
+
+  expandedExcludedShell.setExpanded(true);
+  const expandedShellContainer = new Container();
+  expandedShellContainer.addChild(expandedExcludedShell);
+  assert.deepEqual(expandedShellContainer.render(80), [" › !!"]);
+  expandedExcludedShell.setComplete(0, false);
+
+  invalidatedExcludedShell.invalidate();
+  const invalidatedShellContainer = new Container();
+  invalidatedShellContainer.addChild(invalidatedExcludedShell);
+  assert.deepEqual(invalidatedShellContainer.render(80), [" › !!"]);
+  invalidatedExcludedShell.setComplete(0, false);
 
   const hiddenThinking = new AssistantMessageComponent({
     content: [{ type: "thinking", thinking: "hidden" }, { type: "toolCall" }],
@@ -254,6 +280,8 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.equal(toolPrototype.render, nativeToolRender);
   assert.equal(bashPrototype.appendOutput, nativeBashAppendOutput);
   assert.equal(bashPrototype.setComplete, nativeBashSetComplete);
+  assert.equal(bashPrototype.setExpanded, nativeBashSetExpanded);
+  assert.equal(bashPrototype.invalidate, nativeBashInvalidate);
   assert.equal(customPrototype.render, nativeCustomRender);
   assert.equal(assistantPrototype.render, nativeAssistantRender);
   assert.equal(assistantPrototype.setHideThinkingBlock, nativeSetHideThinking);

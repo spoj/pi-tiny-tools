@@ -220,6 +220,20 @@ export default function tinyTools(pi: ExtensionAPI): void {
         rememberShellMarker(this);
         original.apply(this, args);
       }),
+      patchMethod(BashExecutionComponent.prototype, "setExpanded", (original) => function (
+        this: BashExecutionComponent,
+        ...args: Parameters<BashExecutionComponent["setExpanded"]>
+      ) {
+        rememberShellMarker(this);
+        original.apply(this, args);
+      }),
+      patchMethod(BashExecutionComponent.prototype, "invalidate", (original) => function (
+        this: BashExecutionComponent,
+        ...args: Parameters<BashExecutionComponent["invalidate"]>
+      ) {
+        rememberShellMarker(this);
+        original.apply(this, args);
+      }),
       patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
         const lines = original.call(this, width);
         if (!hasThinking(this)) return lines.every(isBlank) ? [] : lines;
