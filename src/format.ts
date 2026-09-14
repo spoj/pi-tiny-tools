@@ -87,6 +87,9 @@ export function renderTraceGroup(rows: TraceRow[], width: number, theme?: Theme)
   }).join(" ");
   if (width <= PREFIX_WIDTH) return [truncateToWidth(`${prefix(theme)}${names}`, Math.max(1, width))];
   return wrapTextWithAnsi(names, width - PREFIX_WIDTH).map((line, index) =>
-    `${index === 0 ? prefix(theme) : " ".repeat(PREFIX_WIDTH)}${trimWrappedSeparator(line)}`,
+    truncateToWidth(
+      `${index === 0 ? prefix(theme) : " ".repeat(PREFIX_WIDTH)}${trimWrappedSeparator(line)}`,
+      width,
+    ),
   );
 }

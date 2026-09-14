@@ -21,6 +21,11 @@ test("trace groups wrap names together", () => {
   assert.ok(lines.every((line) => visibleWidth(line) <= 24));
 });
 
+test("trace groups do not overflow when a wide name cannot fit the continuation indent", () => {
+  const lines = renderTraceGroup([{ name: "中", color: "accent" }], 4);
+  assert.ok(lines.every((line) => visibleWidth(line) <= 4));
+});
+
 test("trace names strip terminal control sequences before styling", () => {
   const osc52 = "malicious\x1b]52;c;secret\x07";
   const csi = "tool\x1b[2J";
