@@ -227,6 +227,21 @@ function thinkingText(message: LiveAssistantMessage): string {
     .join("\n\n");
 }
 
+function liveToolItem(
+  toolCallId: string,
+  toolName: string,
+  updates: Partial<Pick<TraceItem, "status" | "call" | "output" | "result" | "details">> = {},
+): TraceItem {
+  return {
+    ...liveItems.get(toolCallId),
+    id: toolCallId,
+    kind: "tool",
+    name: toolName,
+    status: "pending",
+    ...updates,
+  };
+}
+
 export function updateLiveAssistant(message: LiveAssistantMessage): void {
   const output = thinkingText(message);
   if (output) {
@@ -260,42 +275,26 @@ export function finishLiveAssistant(message: LiveAssistantMessage): void {
 }
 
 export function startLiveTool(toolCallId: string, toolName: string, args: unknown): void {
-  const current = liveItems.get(toolCallId);
-  publishLive({
-    ...current,
-    id: toolCallId,
-    kind: "tool",
-    name: toolName,
-    status: "pending",
+  publishLive(liveToolItem(toolCallId, toolName, {
     call: { id: ellipsizeId(toolCallId), name: toolName, arguments: args },
-  });
+  }));
 }
 
 export function updateLiveTool(toolCallId: string, toolName: string, args: unknown, result: LiveToolResult): void {
-  publishLive({
-    ...liveItems.get(toolCallId),
-    id: toolCallId,
-    kind: "tool",
-    name: toolName,
-    status: "pending",
+  publishLive(liveToolItem(toolCallId, toolName, {
     call: { id: ellipsizeId(toolCallId), name: toolName, arguments: args },
     output: contentValue(result.content),
     details: result.details,
-  });
+  }));
 }
 
 export function finishLiveTool(toolCallId: string, toolName: string, result: LiveToolResult, isError: boolean): void {
-  const current = liveItems.get(toolCallId)!;
-  publishLive({
-    ...current,
-    id: toolCallId,
-    kind: "tool",
-    name: toolName,
+  publishLive(liveToolItem(toolCallId, toolName, {
     status: isError ? "error" : "success",
     output: contentValue(result.content),
     result: { toolCallId: ellipsizeId(toolCallId), toolName, isError },
     details: result.details,
-  });
+  }));
 }
 
 export function forgetLiveTool(toolCallId: string): void {
