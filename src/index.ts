@@ -69,6 +69,13 @@ function rememberShellMarker(component: BashExecutionComponent): void {
   shell.tinyToolsShellMarker = shellMarker(shell);
 }
 
+function rememberShellMarkerWrapper<T extends (...args: never[]) => void>(original: T): T {
+  return function (this: BashExecutionComponent, ...args: Parameters<T>): void {
+    rememberShellMarker(this);
+    original.apply(this, args);
+  } as T;
+}
+
 function customEntry(component: unknown): { customType?: unknown } | undefined {
   const entry = (component as { entry?: { type?: unknown; customType?: unknown } } | undefined)?.entry;
   return entry?.type === "custom" ? entry : undefined;
@@ -179,10 +186,7 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
     }
 
     const lines = child.render(width);
-    if (lines.length === 0) {
-      pendingSpacing.push(...lines);
-      continue;
-    }
+    if (lines.length === 0) continue;
 
     flushTraces();
     output.push(...pendingSpacing, ...lines);
@@ -206,34 +210,10 @@ export default function tinyTools(pi: ExtensionAPI): void {
 
   if (patchUsers === 0) {
     restorePatches = [
-      patchMethod(BashExecutionComponent.prototype, "appendOutput", (original) => function (
-        this: BashExecutionComponent,
-        chunk: string,
-      ) {
-        rememberShellMarker(this);
-        original.call(this, chunk);
-      }),
-      patchMethod(BashExecutionComponent.prototype, "setComplete", (original) => function (
-        this: BashExecutionComponent,
-        ...args: Parameters<BashExecutionComponent["setComplete"]>
-      ) {
-        rememberShellMarker(this);
-        original.apply(this, args);
-      }),
-      patchMethod(BashExecutionComponent.prototype, "setExpanded", (original) => function (
-        this: BashExecutionComponent,
-        ...args: Parameters<BashExecutionComponent["setExpanded"]>
-      ) {
-        rememberShellMarker(this);
-        original.apply(this, args);
-      }),
-      patchMethod(BashExecutionComponent.prototype, "invalidate", (original) => function (
-        this: BashExecutionComponent,
-        ...args: Parameters<BashExecutionComponent["invalidate"]>
-      ) {
-        rememberShellMarker(this);
-        original.apply(this, args);
-      }),
+      patchMethod(BashExecutionComponent.prototype, "appendOutput", rememberShellMarkerWrapper),
+      patchMethod(BashExecutionComponent.prototype, "setComplete", rememberShellMarkerWrapper),
+      patchMethod(BashExecutionComponent.prototype, "setExpanded", rememberShellMarkerWrapper),
+      patchMethod(BashExecutionComponent.prototype, "invalidate", rememberShellMarkerWrapper),
       patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
         const lines = original.call(this, width);
         if (!hasThinking(this)) return lines.every(isBlank) ? [] : lines;
