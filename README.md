@@ -2,8 +2,17 @@
 
 A small [Pi](https://github.com/earendil-works/pi-mono) extension that shows tool calls, thinking, and extension messages as colored names instead of full blocks.
 
+For example, a coding session looks like this (the tool names are colored in Pi):
+
 ```text
- › think read bash pi-subagents think edit write
+fix the crash when the config file is missing
+
+I'll check how the config is loaded and add a regression test.
+
+ › think bash read read think edit write bash
+
+Fixed. A missing config file now falls back to the defaults.
+Added a regression test. Tests pass.
 ```
 
 Your messages, assistant replies, and assistant errors stay visible as usual.
