@@ -2,18 +2,7 @@
 
 A small [Pi](https://github.com/earendil-works/pi-mono) extension that shows tool calls, thinking, and extension messages as colored names instead of full blocks.
 
-For example, a coding session looks like this (the tool names are colored in Pi):
-
-```text
-fix the crash when the config file is missing
-
-I'll check how the config is loaded and add a regression test.
-
- › think bash read read think edit write bash
-
-Fixed. A missing config file now falls back to the defaults.
-Added a regression test. Tests pass.
-```
+![Pi running in Termux, with bash, write, read, and edit calls shown as compact colored names](assets/screenshot.jpg)
 
 Your messages, assistant replies, and assistant errors stay visible as usual.
 
