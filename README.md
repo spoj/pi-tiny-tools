@@ -1,27 +1,25 @@
 # pi-tiny-tools
 
-A small [Pi](https://github.com/earendil-works/pi-mono) extension that reduces Pi's internal activity—tool calls, thinking, and extension messages—to colored names.
+A small [Pi](https://github.com/earendil-works/pi-mono) extension that shows tool calls, thinking, and extension messages as colored names instead of full blocks.
 
 ```text
  › think read bash pi-subagents think edit write
 ```
 
-The transcript has three visibility levels:
+Your messages, assistant replies, and assistant errors stay visible as usual.
 
-- **Full:** user messages, assistant messages, and assistant error notices.
-- **Minimized and traceable:** thinking, tools, skill invocations, custom messages, custom entries, `!` and `!!` shell executions, compactions, and branch summaries. These render as compact names and retain their full content in `/trace`.
-- **Silent:** model changes, thinking-level changes, and billing notices. These add no transcript item.
+Thinking, tools, skills, custom messages and entries, `!` and `!!` shell commands, compactions, and branch summaries shrink to names. Their full content is still available in `/trace`. Model changes, thinking-level changes, and billing notices are hidden.
 
-Internal names share one layout and flow onto indented continuation lines when needed. Thinking uses Pi's native thinking color. Compact traces have one leading blank line and no blank rows between items.
+Names wrap onto indented lines when needed. Thinking keeps Pi's usual thinking color.
 
-Run `/trace` or press `Alt+T` to inspect minimized items from the current session branch in a Pi overlay. It opens on the newest item and follows new thinking, tool calls, and tool output while they stream. Pi's native `Ctrl+T` and `Ctrl+O` toggles remain available; their display effects are intentionally invisible while the compact trace renderer is active.
+Run `/trace` or press `Alt+T` to open the full details for the current session branch. It starts at the newest item and follows thinking, tool calls, and output as they stream. Pi's `Ctrl+T` and `Ctrl+O` toggles still work, but won't change how the transcript looks while this extension is active.
 
 - `j` / `k`: next / previous item
 - `PageDown` / `PageUp` or `Ctrl+D` / `Ctrl+U`: scroll the current item
 - `g` / `G`: top / bottom
 - `Esc` / `Alt+T`: close
 
-The inspector shows the complete retained content for traceable items. It cannot recover output that a tool discarded before returning; when a tool truncates output, its stored result and truncation details are shown.
+The inspector shows everything Pi kept. If a tool truncated its output, you'll see the stored result and truncation details, not the discarded output.
 
 ## Install
 
@@ -35,14 +33,14 @@ Run a local checkout:
 pi -e .
 ```
 
-## Scope
+## How it works
 
-The extension patches Pi's transcript components and container rendering. One tool-row patch covers built-in, extension, and MCP tools. Custom messages use their `customType` as the colored name, including after session reload.
+The extension patches Pi's transcript rendering for built-in, extension, and MCP tools. Custom messages use their `customType` as the colored name, including after session reload.
 
-This uses private component state (tool data, custom-message data, and assistant message data) and may need an update when Pi changes those components.
+It relies on Pi's private component state, so Pi updates may break it.
 
-The extension changes display only. Tool results and custom-message content sent to the model remain complete.
+This only changes what you see. Tool results and custom-message content sent to the model are unchanged.
 
 ## Credit
 
-Inspired by [Traceline](https://github.com/tmustier/pine-of-glass/tree/main/extensions/pi-traceline), created by [tmustier](https://github.com/tmustier), which pioneered compact one-line tool traces and synchronized thinking/tool expansion for Pi.
+Inspired by [Traceline](https://github.com/tmustier/pine-of-glass/tree/main/extensions/pi-traceline) by [tmustier](https://github.com/tmustier), which introduced compact one-line tool traces and synchronized thinking/tool expansion for Pi.
