@@ -8,6 +8,7 @@ import {
   SkillInvocationMessageComponent,
   ToolExecutionComponent,
   type ExtensionAPI,
+  type SessionEntry,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
@@ -233,6 +234,20 @@ export default function tinyTools(pi: ExtensionAPI): void {
           ? renderTraceGroups(this.children, width)
           : original.call(this, width);
       }),
+      patchMethod(
+        InteractiveMode.prototype as unknown as {
+          renderSessionEntries(this: { sessionManager: { getBranch(): SessionEntry[] } }, entries: SessionEntry[], options?: unknown): void;
+        },
+        "renderSessionEntries",
+        (original) => function (entries, options): void {
+          const branch = this.sessionManager.getBranch();
+          const latestCompaction = branch.filter((entry) => entry.type === "compaction").at(-1);
+          // Pi appends the newest summary separately when compaction finishes.
+          const appendSummary = latestCompaction && !entries.some((entry) => entry.id === latestCompaction.id);
+          const transcript = branch.filter((entry) => !appendSummary || entry !== latestCompaction);
+          original.call(this, transcript, options);
+        },
+      ),
       patchMethod(
         InteractiveMode.prototype as unknown as {
           addMessageToChat(this: unknown, message: InteractiveMessage, options?: unknown): void;

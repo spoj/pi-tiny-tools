@@ -115,7 +115,7 @@ test("internal traces stay compact while native expansion state changes", () => 
     outputPad: 0,
     pendingTools: new Map(),
     session: { extensionRunner: { getMessageRenderer: () => undefined } },
-    sessionManager: { getEntries: () => sessionManager.getEntries() },
+    sessionManager,
     settingsManager: { getShowCacheMissNotices: () => false },
     toolOutputExpanded: false,
     ui: { requestRender() {} },
