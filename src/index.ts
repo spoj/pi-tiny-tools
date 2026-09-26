@@ -25,7 +25,10 @@ import {
   updateLiveTool,
 } from "./trace-inspector.ts";
 
-let currentTheme: (() => Theme | undefined) | undefined;
+// Snapshot of the current theme. Never retain ExtensionContext across events:
+// a captured ctx becomes stale after newSession/fork/switchSession/reload and
+// accessing ctx.ui afterwards throws. Read ctx.ui.theme immediately and store the value.
+let currentTheme: Theme | undefined;
 let patchUsers = 0;
 let restorePatches: (() => void)[] | undefined;
 
@@ -61,7 +64,7 @@ type InteractiveMessage = { role?: unknown; display?: unknown };
 function shellMarker(component: ShellComponent): "!" | "!!" {
   if (component.tinyToolsShellMarker) return component.tinyToolsShellMarker;
   const header = component.contentContainer.children[0] as { text?: unknown } | undefined;
-  const theme = currentTheme?.();
+  const theme = currentTheme;
   return theme && header?.text === theme.fg("dim", theme.bold(`$ ${component.command}`)) ? "!!" : "!";
 }
 
@@ -147,7 +150,7 @@ function renderTraceGroups(children: Array<{ render: (width: number) => string[]
   const flushTraces = (): void => {
     if (traces.length === 0) return;
     if (previous === "content") output.push("");
-    output.push(...renderTraceGroup(traces, width, currentTheme?.()));
+    output.push(...renderTraceGroup(traces, width, currentTheme));
     traces.length = 0;
     previous = "trace";
   };
@@ -267,7 +270,8 @@ export default function tinyTools(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     resetLiveItems();
-    currentTheme = () => ctx.ui.theme;
+    // Immediate read: do not store () => ctx.ui.theme, the ctx goes stale.
+    currentTheme = ctx.ui?.theme ?? currentTheme;
     ctx.ui.setHiddenThinkingLabel("");
   });
 
@@ -290,6 +294,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
   });
 
   pi.on("session_tree", (_event, ctx) => {
+    currentTheme = ctx.ui?.theme ?? currentTheme;
     pruneLiveItems(ctx.sessionManager.getBranch());
   });
 
