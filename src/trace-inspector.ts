@@ -1,344 +1,35 @@
-import { parseSkillBlock, type ExtensionContext, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
-import { stripTerminalSequences, TRACE_NAMES } from "./format.ts";
+import { getMarkdownTheme, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Component, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, thinkingText, type TraceRow } from "./format.ts";
 
-export type TraceItem = {
-  id: string;
-  kind: "tool" | "custom" | "thinking" | "shell" | "summary" | "entry" | "skill";
-  name: string;
-  status: "pending" | "success" | "error";
-  hidden?: boolean;
-  call?: unknown;
-  output?: string;
-  result?: unknown;
-  details?: unknown;
-};
+export type TraceItem = { component: Component; row: TraceRow };
 
-export function ellipsizeId(id: string): string {
-  return id.length <= 10 ? id : `${id.slice(0, 5)}…${id.slice(-4)}`;
-}
-
-type Content = string | Array<
-  | { type: "text"; text: string }
-  | { type: "image"; mimeType: string; data: string }
->;
-
-function contentValue(content: Content): string {
-  if (typeof content === "string") return content;
-  return content.map((part) => part.type === "text"
-    ? part.text
-    : `[image ${part.mimeType}, ${part.data.length} base64 characters]`
-  ).join("\n");
-}
-
-export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
-  const items: TraceItem[] = [];
-  const tools = new Map<string, TraceItem>();
-
-  for (const entry of entries) {
-    if (entry.type === "compaction") {
-      items.push({
-        id: entry.id,
-        kind: "summary",
-        name: TRACE_NAMES.compaction,
-        status: "success",
-        details: entry,
-      });
-      continue;
-    }
-
-    if (entry.type === "branch_summary") {
-      items.push({
-        id: entry.id,
-        kind: "summary",
-        name: TRACE_NAMES.branchSummary,
-        status: "success",
-        details: entry,
-      });
-      continue;
-    }
-
-    if (entry.type === "custom") {
-      items.push({
-        id: entry.id,
-        kind: "entry",
-        name: entry.customType,
-        status: "success",
-        details: entry,
-      });
-      continue;
-    }
-
-    if (entry.type === "custom_message") {
-      items.push({
-        id: entry.id,
-        kind: "custom",
-        name: entry.customType,
-        status: "success",
-        hidden: !entry.display,
-        output: contentValue(entry.content),
-        details: entry.details,
-      });
-      continue;
-    }
-
-    if (entry.type !== "message") continue;
-    if (entry.message.role === "user") {
-      const content = typeof entry.message.content === "string"
-        ? entry.message.content
-        : entry.message.content.filter((part) => part.type === "text").map((part) => part.text).join("");
-      const skill = parseSkillBlock(content);
-      if (skill) {
-        items.push({
-          id: `${entry.id}:skill`,
-          kind: "skill",
-          name: skill.name,
-          status: "success",
-          call: { name: skill.name, location: skill.location },
-          output: skill.content,
-        });
-      }
-      continue;
-    }
-
-    if (entry.message.role === "bashExecution") {
-      items.push({
-        id: entry.id,
-        kind: "shell",
-        name: entry.message.excludeFromContext ? "!!" : "!",
-        status: entry.message.cancelled || (entry.message.exitCode !== undefined && entry.message.exitCode !== 0) ? "error" : "success",
-        details: entry,
-      });
-      continue;
-    }
-
-    if (entry.message.role === "assistant") {
-      for (let index = 0; index < entry.message.content.length; index++) {
-        const part = entry.message.content[index]!;
-        if (part.type === "thinking") {
-          const blocks: string[] = [];
-          while (index < entry.message.content.length) {
-            const thinking = entry.message.content[index]!;
-            if (thinking.type !== "thinking") break;
-            if (thinking.thinking.trim()) blocks.push(thinking.thinking);
-            index++;
-          }
-          index--;
-          if (blocks.length > 0) {
-            items.push({
-              id: `${entry.id}:thinking:${index}`,
-              kind: "thinking",
-              name: TRACE_NAMES.thinking,
-              status: "success",
-              output: blocks.join("\n\n"),
-            });
-          }
-        } else if (part.type === "toolCall") {
-          const item: TraceItem = {
-            id: part.id,
-            kind: "tool",
-            name: part.name,
-            status: entry.message.stopReason === "aborted" || entry.message.stopReason === "error" ? "error" : "pending",
-            call: { id: ellipsizeId(part.id), name: part.name, arguments: part.arguments },
-          };
-          items.push(item);
-          tools.set(part.id, item);
-        }
-      }
-      continue;
-    }
-
-    if (entry.message.role === "toolResult") {
-      const item = tools.get(entry.message.toolCallId);
-      if (!item) continue;
-      item.status = entry.message.isError ? "error" : "success";
-      item.output = contentValue(entry.message.content);
-      item.result = {
-        toolCallId: ellipsizeId(entry.message.toolCallId),
-        toolName: entry.message.toolName,
-        isError: entry.message.isError,
-        timestamp: entry.message.timestamp,
-        ...(entry.message.usage === undefined ? {} : { usage: entry.message.usage }),
-      };
-      item.details = entry.message.details;
-    }
-  }
-
-  return items;
-}
-
-function formatValue(value: unknown): string[] {
-  if (typeof value === "string") return stripTerminalSequences(value).split("\n");
-  const json = JSON.stringify(value, null, 2);
-  return json === undefined ? [] : stripTerminalSequences(json).split("\n");
-}
-
-export function traceContent(item: TraceItem): string[] {
-  const lines: string[] = [];
-  const add = (heading: string, value: unknown): void => {
-    const content = formatValue(value);
-    if (content.length === 0) return;
-    if (lines.length > 0) lines.push("");
-    lines.push(heading, ...content);
-  };
-
-  add("CALL", item.call);
-  add("OUTPUT", item.output);
-  add("RESULT", item.result);
-  add("DETAILS", item.details);
-  return lines.length > 0 ? lines : ["No content"];
-}
+type Expandable = { setExpanded?(expanded: boolean): void };
 
 function fit(text: string, width: number): string {
   const clipped = truncateToWidth(text, width, "");
   return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
 }
 
-type LiveAssistantMessage = {
-  timestamp: number;
-  content: Array<{
-    type: string;
-    thinking?: string;
-    id?: string;
-    name?: string;
-    arguments?: unknown;
-  }>;
-};
-
-type LiveToolResult = {
-  content: Content;
-  details?: unknown;
-};
-
-const liveItems = new Map<string, TraceItem>();
-let activeInspector: TraceInspector | undefined;
-
-function publishLive(item: TraceItem): void {
-  liveItems.set(item.id, item);
-  activeInspector?.updateItem(item);
-}
-
-function thinkingText(message: LiveAssistantMessage): string {
-  return message.content
-    .filter((part): part is { type: string; thinking: string } => part.type === "thinking" && typeof part.thinking === "string")
-    .map((part) => part.thinking)
-    .filter((text) => text.trim())
-    .join("\n\n");
-}
-
-function liveToolItem(
-  toolCallId: string,
-  toolName: string,
-  updates: Partial<Pick<TraceItem, "status" | "call" | "output" | "result" | "details">> = {},
-): TraceItem {
-  return {
-    ...liveItems.get(toolCallId),
-    id: toolCallId,
-    kind: "tool",
-    name: toolName,
-    status: "pending",
-    ...updates,
-  };
-}
-
-export function updateLiveAssistant(message: LiveAssistantMessage): void {
-  const output = thinkingText(message);
-  if (output) {
-    const id = `live-thinking:${message.timestamp}`;
-    publishLive({ id, kind: "thinking", name: TRACE_NAMES.thinking, status: "pending", output });
-  }
-
-  for (const part of message.content) {
-    if (part.type !== "toolCall" || part.id === undefined || part.name === undefined) continue;
-    const current = liveItems.get(part.id);
-    publishLive({
-      id: part.id,
-      kind: "tool",
-      name: part.name,
-      status: current?.status ?? "pending",
-      call: { id: ellipsizeId(part.id), name: part.name, arguments: part.arguments },
-      output: current?.output,
-      result: current?.result,
-      details: current?.details,
-    });
-  }
-}
-
-export function finishLiveAssistant(message: LiveAssistantMessage): void {
-  updateLiveAssistant(message);
-  const id = `live-thinking:${message.timestamp}`;
-  const thinking = liveItems.get(id);
-  if (!thinking) return;
-  publishLive({ ...thinking, status: "success" });
-  liveItems.delete(id);
-}
-
-export function startLiveTool(toolCallId: string, toolName: string, args: unknown): void {
-  publishLive(liveToolItem(toolCallId, toolName, {
-    call: { id: ellipsizeId(toolCallId), name: toolName, arguments: args },
-  }));
-}
-
-export function updateLiveTool(toolCallId: string, toolName: string, args: unknown, result: LiveToolResult): void {
-  publishLive(liveToolItem(toolCallId, toolName, {
-    call: { id: ellipsizeId(toolCallId), name: toolName, arguments: args },
-    output: contentValue(result.content),
-    details: result.details,
-  }));
-}
-
-export function finishLiveTool(toolCallId: string, toolName: string, result: LiveToolResult, isError: boolean): void {
-  publishLive(liveToolItem(toolCallId, toolName, {
-    status: isError ? "error" : "success",
-    output: contentValue(result.content),
-    result: { toolCallId: ellipsizeId(toolCallId), toolName, isError },
-    details: result.details,
-  }));
-}
-
-export function forgetLiveTool(toolCallId: string): void {
-  liveItems.delete(toolCallId);
-}
-
-export function pruneLiveItems(entries: SessionEntry[]): void {
-  const retained = new Set(extractTraceItems(entries).map((item) => item.id));
-  for (const id of [...liveItems.keys()]) {
-    if (!retained.has(id)) liveItems.delete(id);
-  }
-}
-
-export function resetLiveItems(): void {
-  liveItems.clear();
-  activeInspector = undefined;
-}
-
 export class TraceInspector implements Component {
-  private readonly items: TraceItem[];
+  private readonly items: () => TraceItem[];
   private readonly theme: Theme;
   private readonly tui: TUI;
   private readonly done: () => void;
-  private selected: number;
+  private readonly thinking: Markdown;
+  private thinkingSource = "";
+  private selected: Component | undefined;
+  private expanded: Component | undefined;
+  private followNewest = true;
   private scroll = 0;
+  private pinned = false;
 
-  constructor(items: TraceItem[], theme: Theme, tui: TUI, done: () => void) {
+  constructor(items: () => TraceItem[], theme: Theme, tui: TUI, done: () => void) {
     this.items = items;
     this.theme = theme;
     this.tui = tui;
     this.done = done;
-    this.selected = items.length - 1;
-  }
-
-  updateItem(item: TraceItem): void {
-    const index = this.items.findIndex((candidate) => candidate.id === item.id);
-    if (index === -1) {
-      const wasNewest = this.selected === this.items.length - 1;
-      this.items.push(item);
-      if (wasNewest) this.selected = this.items.length - 1;
-    } else {
-      this.items[index] = item;
-    }
-    if (this.items[this.selected]?.id === item.id) this.scroll = Number.MAX_SAFE_INTEGER;
-    this.tui.requestRender();
+    this.thinking = new Markdown("", 1, 0, getMarkdownTheme(), { color: (text) => theme.fg("thinkingText", text), italic: true });
   }
 
   handleInput(data: string): void {
@@ -346,97 +37,99 @@ export class TraceInspector implements Component {
       this.done();
       return;
     }
-    if ((data === "j" || matchesKey(data, "down")) && this.selected < this.items.length - 1) {
-      this.selected++;
-      this.scroll = 0;
-    } else if ((data === "k" || matchesKey(data, "up")) && this.selected > 0) {
-      this.selected--;
-      this.scroll = 0;
-    } else if (matchesKey(data, "pageDown") || matchesKey(data, "ctrl+d")) {
-      this.scroll += this.bodyHeight();
-    } else if (matchesKey(data, "pageUp") || matchesKey(data, "ctrl+u")) {
-      this.scroll = Math.max(0, this.scroll - this.bodyHeight());
-    } else if (data === "g" || matchesKey(data, "home")) {
-      this.scroll = 0;
-    } else if (data === "G" || matchesKey(data, "end")) {
-      this.scroll = Number.MAX_SAFE_INTEGER;
-    }
+    const items = this.items();
+    const index = items.findIndex((item) => item.component === this.selected);
+    if (data === "j" || matchesKey(data, "down")) this.select(items, index + 1);
+    else if (data === "k" || matchesKey(data, "up")) this.select(items, index - 1);
+    else if (matchesKey(data, "pageDown") || matchesKey(data, "ctrl+d")) this.scrollBy(this.bodyHeight());
+    else if (matchesKey(data, "pageUp") || matchesKey(data, "ctrl+u")) this.scrollBy(-this.bodyHeight());
+    else if (data === "g" || matchesKey(data, "home")) this.scrollBy(-this.scroll);
+    else if (data === "G" || matchesKey(data, "end")) this.pinned = true;
     this.tui.requestRender();
   }
 
-  render(width: number): string[] {
-    const name = stripTerminalSequences(this.items[this.selected]!.name);
-    if (width < 4) return [truncateToWidth(name, width, "")];
-    const innerWidth = width - 2;
-    const bodyWidth = Math.max(1, innerWidth - 2);
-    const item = this.items[this.selected]!;
-    const content = traceContent(item).flatMap((line) => wrapTextWithAnsi(line || " ", bodyWidth));
-    const bodyHeight = this.bodyHeight();
-    const maxScroll = Math.max(0, content.length - bodyHeight);
-    this.scroll = Math.min(this.scroll, maxScroll);
-
-    const color = item.kind === "thinking"
-      ? "thinkingText"
-      : item.status === "error"
-        ? "error"
-        : item.status === "pending"
-          ? "accent"
-          : item.kind === "custom"
-            ? "customMessageLabel"
-            : "success";
-    const state = item.kind === "custom" ? (item.hidden ? "hidden" : "visible") : item.status;
-    const title = ` trace ${this.selected + 1}/${this.items.length} · ${item.kind} · ${this.theme.fg(color, name)} · ${state} `;
-    const border = (left: string, fill: string, right: string) => this.theme.fg("border", left + fill.repeat(innerWidth) + right);
-    const row = (text = "") => this.theme.fg("border", "│") + fit(text, innerWidth) + this.theme.fg("border", "│");
-    const lines = [
-      border("╭", "─", "╮"),
-      row(title),
-      border("├", "─", "┤"),
-    ];
-
-    for (let index = 0; index < bodyHeight; index++) {
-      const line = content[this.scroll + index] ?? "";
-      lines.push(row(` ${fit(line, bodyWidth)} `));
-    }
-
-    lines.push(border("├", "─", "┤"));
-    lines.push(row(this.theme.fg("dim", " j/k item · PgUp/PgDn scroll · g/G top/bottom · Esc/Alt+T close")));
-    lines.push(border("╰", "─", "╯"));
-    return lines;
+  handleMouse(event: TuiMouseEvent) {
+    if (event.type !== "wheel") return undefined;
+    this.scrollBy(event.wheelDelta ?? 0);
+    return { handled: true };
   }
 
-  invalidate(): void {}
+  render(width: number): string[] {
+    const items = this.items();
+    let index = items.findIndex((item) => item.component === this.selected);
+    if (index === -1 || (this.followNewest && index < items.length - 1)) {
+      index = items.length - 1;
+      this.select(items, index);
+    }
+    const item = items[index];
+    if (item && item.component !== this.expanded) {
+      (item.component as Expandable).setExpanded?.(true);
+      this.expanded = item.component;
+    }
+
+    const content = item ? this.renderItem(item.component, width) : [];
+    const height = this.bodyHeight();
+    const maxScroll = Math.max(0, content.length - height);
+    if (this.pinned) this.scroll = maxScroll;
+    this.scroll = Math.min(this.scroll, maxScroll);
+    this.pinned = this.scroll === maxScroll;
+
+    const title = item ? `trace ${index + 1}/${items.length} · ${this.theme.fg(item.row.color, stripTerminalSequences(item.row.name))}` : "trace";
+    const position = maxScroll > 0 ? `${this.scroll + 1}–${this.scroll + height} of ${content.length}` : "";
+    return [
+      this.rule(title, position, width),
+      ...Array.from({ length: height }, (_, row) => fit(content[this.scroll + row] ?? "", width)),
+      this.rule(this.theme.fg("dim", "j/k item · PgUp/PgDn scroll · g/G top/bottom · Esc close"), "", width),
+    ];
+  }
+
+  invalidate(): void {
+    this.thinking.invalidate();
+  }
+
+  private select(items: TraceItem[], index: number): void {
+    if (index < 0 || index >= items.length) return;
+    this.selected = items[index]!.component;
+    this.followNewest = index === items.length - 1;
+    this.scroll = 0;
+    this.pinned = false;
+  }
+
+  private scrollBy(lines: number): void {
+    this.scroll = Math.max(0, this.scroll + lines);
+    this.pinned = false;
+  }
+
+  private renderItem(component: Component, width: number): string[] {
+    const thinking = thinkingText(component);
+    if (!thinking) return component.render(width);
+    if (thinking !== this.thinkingSource) {
+      this.thinkingSource = thinking;
+      this.thinking.setText(thinking);
+    }
+    return ["", ...this.thinking.render(width)];
+  }
+
+  private rule(left: string, right: string, width: number): string {
+    const border = (text: string) => this.theme.fg("border", text);
+    const tail = right ? ` ${this.theme.fg("dim", right)} ${border("─")}` : border("─");
+    const fill = width - visibleWidth(left) - visibleWidth(tail) - 3;
+    return fit(`${border("─")} ${left} ${border("─".repeat(Math.max(0, fill)))}${tail}`, width);
+  }
 
   private bodyHeight(): number {
-    return Math.max(1, Math.floor(this.tui.terminal.rows * 0.9) - 6);
+    return Math.max(1, this.tui.terminal.rows - 2);
   }
 }
 
-export async function showTraceInspector(ctx: ExtensionContext): Promise<void> {
+export async function showTraceInspector(ctx: ExtensionContext, items: () => TraceItem[]): Promise<void> {
   if (ctx.mode !== "tui") return;
-  const items = extractTraceItems(ctx.sessionManager.getBranch());
-  for (const item of liveItems.values()) {
-    const index = items.findIndex((candidate) => candidate.id === item.id);
-    if (index === -1) items.push(item);
-    else if (items[index]!.status === "pending") items[index] = item;
-  }
-  if (items.length === 0) {
+  if (items().length === 0) {
     ctx.ui.notify("No traceable items in the current branch", "info");
     return;
   }
-
-  try {
-    await ctx.ui.custom<void>(
-      (tui, theme, _keybindings, done) => {
-        activeInspector = new TraceInspector(items, theme, tui, done);
-        return activeInspector;
-      },
-      {
-        overlay: true,
-        overlayOptions: () => ({ width: "90%", minWidth: 40, maxHeight: "90%", margin: 1 }),
-      },
-    );
-  } finally {
-    activeInspector = undefined;
-  }
+  await ctx.ui.custom<void>((tui, theme, _keybindings, done) => new TraceInspector(items, theme, tui, done), {
+    overlay: true,
+    overlayOptions: { width: "100%", maxHeight: "100%" },
+  });
 }

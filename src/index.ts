@@ -13,19 +13,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, type Component } from "@earendil-works/pi-tui";
 import { renderTraceGroup, stripTerminalSequences, thinkingText, type TraceRow } from "./format.ts";
-import {
-  finishLiveAssistant,
-  finishLiveTool,
-  forgetLiveTool,
-  pruneLiveItems,
-  resetLiveItems,
-  showTraceInspector,
-  startLiveTool,
-  updateLiveAssistant,
-  updateLiveTool,
-} from "./trace-inspector.ts";
+import { showTraceInspector, type TraceItem } from "./trace-inspector.ts";
 
 let currentTheme: (() => Theme | undefined) | undefined;
+let chat: Container | undefined;
 let patchUsers = 0;
 let restorePatches: (() => void)[] | undefined;
 
@@ -92,6 +83,13 @@ function isTraced(component: unknown): boolean {
   return traceRow(component) !== undefined;
 }
 
+function traceItems(): TraceItem[] {
+  return (chat?.children ?? []).flatMap((component) => {
+    const row = traceRow(component);
+    return row ? [{ component, row }] : [];
+  });
+}
+
 function renderTraceGroups(children: Component[], width: number): string[] {
   const output: string[] = [];
   const rows: TraceRow[] = [];
@@ -130,17 +128,21 @@ function renderTraceGroups(children: Component[], width: number): string[] {
 export default function tinyTools(pi: ExtensionAPI): void {
   pi.registerCommand("trace", {
     description: "Inspect minimized transcript items",
-    handler: async (_args, ctx) => showTraceInspector(ctx),
+    handler: async (_args, ctx) => showTraceInspector(ctx, traceItems),
   });
   pi.registerShortcut("alt+t", {
     description: "Toggle the internal trace inspector",
-    handler: showTraceInspector,
+    handler: (ctx) => showTraceInspector(ctx, traceItems),
   });
 
   if (patchUsers === 0) {
     const interactive = InteractiveMode.prototype as unknown as {
       addMessageToChat(this: unknown, message: { role?: unknown; display?: unknown }, options?: unknown): void;
-      renderSessionEntries(this: { sessionManager: { getBranch(): SessionEntry[] } }, entries: SessionEntry[], options?: unknown): void;
+      renderSessionEntries(
+        this: { chatContainer: Container; sessionManager: { getBranch(): SessionEntry[] } },
+        entries: SessionEntry[],
+        options?: unknown,
+      ): void;
       addCacheMissNotice(): void;
       addCacheWarmingUsage(): void;
       addCompactionCostNotice(): void;
@@ -170,6 +172,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
         return this.children.some(isTraced) ? undefined : original.call(this, event);
       }),
       patchMethod(interactive, "renderSessionEntries", (original) => function (entries, options): void {
+        chat = this.chatContainer;
         const branch = this.sessionManager.getBranch();
         const latestCompaction = branch.filter((entry) => entry.type === "compaction").at(-1);
         // Pi appends the newest summary separately when compaction finishes.
@@ -187,40 +190,16 @@ export default function tinyTools(pi: ExtensionAPI): void {
   patchUsers++;
 
   pi.on("session_start", (_event, ctx) => {
-    resetLiveItems();
     currentTheme = () => ctx.ui.theme;
     ctx.ui.setHiddenThinkingLabel("");
   });
 
-  pi.on("message_update", (event) => {
-    if (event.message.role === "assistant") updateLiveAssistant(event.message);
-  });
-  pi.on("tool_execution_start", (event) => {
-    startLiveTool(event.toolCallId, event.toolName, event.args);
-  });
-  pi.on("tool_execution_update", (event) => {
-    updateLiveTool(event.toolCallId, event.toolName, event.args, event.partialResult);
-  });
-  pi.on("tool_execution_end", (event) => {
-    finishLiveTool(event.toolCallId, event.toolName, event.result, event.isError);
-  });
-
-  pi.on("message_end", (event) => {
-    if (event.message.role === "assistant") finishLiveAssistant(event.message);
-    if (event.message.role === "toolResult") forgetLiveTool(event.message.toolCallId);
-  });
-
-  pi.on("session_tree", (_event, ctx) => {
-    pruneLiveItems(ctx.sessionManager.getBranch());
-  });
-
   pi.on("session_shutdown", () => {
     patchUsers--;
-    if (patchUsers === 0) {
-      for (const restore of restorePatches!.reverse()) restore();
-      restorePatches = undefined;
-      currentTheme = undefined;
-    }
-    resetLiveItems();
+    if (patchUsers > 0) return;
+    for (const restore of restorePatches!.reverse()) restore();
+    restorePatches = undefined;
+    currentTheme = undefined;
+    chat = undefined;
   });
 }

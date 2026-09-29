@@ -10,14 +10,14 @@ Thinking, tools, skills, custom messages and entries, `!` and `!!` shell command
 
 Names wrap onto indented lines when needed. Thinking keeps Pi's usual thinking color.
 
-Run `/trace` or press `Alt+T` to open the full details for the current session branch. It starts at the newest item and follows thinking, tool calls, and output as they stream. Pi's `Ctrl+T` and `Ctrl+O` toggles still work, but won't change how the transcript looks while this extension is active.
+Run `/trace` or press `Alt+T` to step through those items full screen. Each one is drawn the way Pi draws it expanded: commands with their output, edit diffs, highlighted file contents, extension messages, and thinking in its usual style. The inspector starts at the newest item and follows new items and streaming output. Pi's `Ctrl+T` and `Ctrl+O` toggles still work, but won't change how the transcript looks while this extension is active.
 
 - `j` / `k`: next / previous item
-- `PageDown` / `PageUp` or `Ctrl+D` / `Ctrl+U`: scroll the current item
+- `PageDown` / `PageUp`, `Ctrl+D` / `Ctrl+U`, or the mouse wheel: scroll the current item
 - `g` / `G`: top / bottom
 - `Esc` / `Alt+T`: close
 
-The inspector shows everything Pi kept. If a tool truncated its output, you'll see the stored result and truncation details, not the discarded output.
+The inspector shows what Pi kept. If a tool truncated its output, you'll see the stored result and its truncation notice, not the discarded output.
 
 ## Install
 
@@ -33,7 +33,7 @@ pi -e .
 
 ## How it works
 
-The extension patches Pi's transcript rendering for built-in, extension, and MCP tools. It rebuilds the displayed transcript from the full branch rather than the compacted model context. Custom messages use their `customType` as the colored name, including after session reload.
+The extension patches Pi's transcript rendering for built-in, extension, and MCP tools. It rebuilds the displayed transcript from the full branch rather than the compacted model context. Custom messages use their `customType` as the colored name, including after session reload. The inspector draws the transcript's own hidden components, so extension renderers apply there too. In fullscreen mode, clicking the compact transcript doesn't expand hidden items or thinking.
 
 It relies on Pi's private component state, so Pi updates may break it.
 

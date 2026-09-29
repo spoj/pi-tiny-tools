@@ -1,382 +1,170 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth, type TUI } from "@earendil-works/pi-tui";
-import { ellipsizeId, extractTraceItems, TraceInspector, traceContent } from "../src/trace-inspector.ts";
+import {
+  AssistantMessageComponent,
+  initTheme,
+  InteractiveMode,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type Theme,
+} from "@earendil-works/pi-coding-agent";
+import { Container, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import tinyTools from "../src/index.ts";
+import { TraceInspector, type TraceItem } from "../src/trace-inspector.ts";
 
-const base = { parentId: null, timestamp: "2026-01-01T00:00:00.000Z" };
+initTheme();
+const theme = { fg: (_color: string, text: string) => text } as unknown as Theme;
 
-function entries(): SessionEntry[] {
-  return [
-    {
-      ...base,
-      type: "message",
-      id: "assistant",
-      message: {
-        role: "assistant",
-        content: [
-          { type: "toolCall", id: "call-1", name: "read", arguments: { path: "one.ts" } },
-          { type: "thinking", thinking: "Need to run the tests." },
-          { type: "toolCall", id: "call-2", name: "bash", arguments: { command: "npm test" } },
-        ],
-      },
-    },
-    {
-      ...base,
-      type: "message",
-      id: "result-1",
-      message: {
-        role: "toolResult",
-        toolCallId: "call-1",
-        toolName: "read",
-        content: [{ type: "text", text: "first" }, { type: "text", text: "second" }],
-        details: { lines: 2 },
-        isError: false,
-        timestamp: 1,
-      },
-    },
-    {
-      ...base,
-      type: "message",
-      id: "result-2",
-      message: {
-        role: "toolResult",
-        toolCallId: "call-2",
-        toolName: "bash",
-        content: [{ type: "text", text: "failed" }],
-        isError: true,
-        timestamp: 2,
-      },
-    },
-    {
-      ...base,
-      type: "custom_message",
-      id: "custom",
-      customType: "browser",
-      content: "hidden context",
-      details: { url: "https://example.com" },
-      display: false,
-    },
-  ] as SessionEntry[];
-}
-
-const theme = {
-  fg(_color: string, text: string) {
-    return text;
-  },
-} as unknown as Theme;
-
-function fakeTui(rows = 14): TUI & { renders: number } {
-  const tui = {
-    terminal: { rows },
-    renders: 0,
-    requestRender() {
-      tui.renders++;
-    },
-  };
+function fakeTui(rows: number): TUI & { renders: number } {
+  const tui = { terminal: { rows }, renders: 0, requestRender() { tui.renders++; } };
   return tui as unknown as TUI & { renders: number };
 }
 
-test("ellipsizes long ids while retaining both distinguishing ends", () => {
-  assert.equal(ellipsizeId("short-id"), "short-id");
-  assert.equal(ellipsizeId("call_1234567890abcdef"), "call_…cdef");
+function tool(name: string, lines: string[]): TraceItem & { component: Component & { lines: string[]; expanded: boolean } } {
+  const component = {
+    lines,
+    expanded: false,
+    setExpanded(expanded: boolean) { component.expanded = expanded; },
+    render: () => component.lines,
+    invalidate() {},
+  };
+  return { component, row: { name, color: "success" } };
+}
+
+const numbered = (count: number) => Array.from({ length: count }, (_, index) => `line ${index}`);
+
+test("inspector shows the newest item expanded, full screen, within its width", () => {
+  const items = [tool("read", ["read one.ts"]), tool("bash", numbered(3))];
+  const inspector = new TraceInspector(() => items, theme, fakeTui(8), () => {});
+
+  const lines = inspector.render(40);
+  assert.equal(lines.length, 8);
+  assert.ok(lines.every((line) => visibleWidth(line) === 40));
+  assert.match(lines[0]!, /^─ trace 2\/2 · bash ─+$/);
+  assert.deepEqual(lines.slice(1, 4).map((line) => line.trimEnd()), ["line 0", "line 1", "line 2"]);
+  assert.match(lines[7]!, /^─ j\/k item · PgUp\/PgDn scroll · g\/G top\//);
+  assert.match(inspector.render(80)[7]!, /^─ j\/k item · PgUp\/PgDn scroll · g\/G top\/bottom · Esc close ─+$/);
+  assert.equal(items[1]!.component.expanded, true);
+  assert.equal(items[0]!.component.expanded, false);
 });
 
-test("extracts tool calls, pairs results by id, and includes hidden custom messages", () => {
-  const items = extractTraceItems(entries());
-
-  assert.deepEqual(items, [
-    {
-      id: "call-1",
-      kind: "tool",
-      name: "read",
-      status: "success",
-      call: { id: "call-1", name: "read", arguments: { path: "one.ts" } },
-      output: "first\nsecond",
-      result: {
-        toolCallId: "call-1",
-        toolName: "read",
-        isError: false,
-        timestamp: 1,
-      },
-      details: { lines: 2 },
-    },
-    {
-      id: "assistant:thinking:1",
-      kind: "thinking",
-      name: "think",
-      status: "success",
-      output: "Need to run the tests.",
-    },
-    {
-      id: "call-2",
-      kind: "tool",
-      name: "bash",
-      status: "error",
-      call: { id: "call-2", name: "bash", arguments: { command: "npm test" } },
-      output: "failed",
-      result: {
-        toolCallId: "call-2",
-        toolName: "bash",
-        isError: true,
-        timestamp: 2,
-      },
-      details: undefined,
-    },
-    {
-      id: "custom",
-      kind: "custom",
-      name: "browser",
-      status: "success",
-      hidden: true,
-      output: "hidden context",
-      details: { url: "https://example.com" },
-    },
-  ]);
-});
-
-test("extracts minimized shell, summary, custom entry, and skill items", () => {
-  const items = extractTraceItems([
-    {
-      ...base,
-      type: "message",
-      id: "shell",
-      message: {
-        role: "bashExecution",
-        command: "pwd",
-        output: "/tmp",
-        exitCode: 0,
-        cancelled: false,
-        truncated: false,
-        excludeFromContext: true,
-        timestamp: 1,
-      },
-    },
-    {
-      ...base,
-      type: "message",
-      id: "shell-visible",
-      message: {
-        role: "bashExecution",
-        command: "printf ok",
-        output: "ok",
-        exitCode: 0,
-        cancelled: false,
-        truncated: false,
-        excludeFromContext: false,
-        timestamp: 1,
-      },
-    },
-    {
-      ...base,
-      type: "compaction",
-      id: "compaction",
-      summary: "Earlier work",
-      firstKeptEntryId: "shell",
-      tokensBefore: 1000,
-    },
-    {
-      ...base,
-      type: "branch_summary",
-      id: "branch",
-      fromId: "shell",
-      summary: "Other approach",
-    },
-    {
-      ...base,
-      type: "custom",
-      id: "state",
-      customType: "todo-state",
-      data: { count: 2 },
-    },
-    {
-      ...base,
-      type: "model_change",
-      id: "model",
-      provider: "test",
-      modelId: "model",
-    },
-    {
-      ...base,
-      type: "thinking_level_change",
-      id: "thinking-level",
-      thinkingLevel: "high",
-    },
-    {
-      ...base,
-      type: "label",
-      id: "label",
-      targetId: "state",
-      label: "checkpoint",
-    },
-    {
-      ...base,
-      type: "session_info",
-      id: "session-info",
-      name: "session",
-    },
-  ] as SessionEntry[]);
-
-  assert.deepEqual(items.map(({ kind, name, status }) => ({ kind, name, status })), [
-    { kind: "shell", name: "!!", status: "success" },
-    { kind: "shell", name: "!", status: "success" },
-    { kind: "summary", name: "compaction", status: "success" },
-    { kind: "summary", name: "branch summary", status: "success" },
-    { kind: "entry", name: "todo-state", status: "success" },
-  ]);
-  assert.ok(traceContent(items[0]!).some((line) => line.includes('"command": "pwd"')));
-  assert.ok(traceContent(items[2]!).some((line) => line.includes('"summary": "Earlier work"')));
-  assert.ok(traceContent(items[4]!).some((line) => line.includes('"count": 2')));
-});
-
-test("marks tool calls from aborted and failed assistant messages as errors", () => {
-  const items = extractTraceItems([
-    {
-      ...base,
-      type: "message",
-      id: "aborted",
-      message: {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "aborted-call", name: "read", arguments: {} }],
-        stopReason: "aborted",
-      },
-    },
-    {
-      ...base,
-      type: "message",
-      id: "failed",
-      message: {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "failed-call", name: "bash", arguments: {} }],
-        stopReason: "error",
-      },
-    },
-  ] as SessionEntry[]);
-
-  assert.deepEqual(items.map(({ id, status }) => ({ id, status })), [
-    { id: "aborted-call", status: "error" },
-    { id: "failed-call", status: "error" },
-  ]);
-});
-
-test("formats all persisted sections", () => {
-  assert.deepEqual(traceContent(extractTraceItems(entries())[0]!), [
-    "CALL",
-    "{",
-    '  "id": "call-1",',
-    '  "name": "read",',
-    '  "arguments": {',
-    '    "path": "one.ts"',
-    "  }",
-    "}",
-    "",
-    "OUTPUT",
-    "first",
-    "second",
-    "",
-    "RESULT",
-    "{",
-    '  "toolCallId": "call-1",',
-    '  "toolName": "read",',
-    '  "isError": false,',
-    '  "timestamp": 1',
-    "}",
-    "",
-    "DETAILS",
-    "{",
-    '  "lines": 2',
-    "}",
-  ]);
-});
-
-test("inspector strips terminal control sequences from content", () => {
-  const inspector = new TraceInspector([
-    {
-      id: "unsafe",
-      kind: "custom",
-      name: "custom\x1b[2J",
-      status: "success",
-      output: "output\x1b]52;c;secret\x07\x9dunterminated",
-      details: "details\x1b[2J",
-    },
-  ], theme, fakeTui(), () => {});
-
-  const lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("custom") && !line.includes("\x1b")));
-  assert.ok(lines.some((line) => line.includes("output") && !line.includes("secret")));
-  assert.ok(lines.some((line) => line.includes("details")));
-  assert.ok(traceContent({
-    id: "unsafe",
-    kind: "custom",
-    name: "custom\x1b[2J",
-    status: "success",
-    output: "output\x1b]52;c;secret\x07\x9dunterminated",
-    details: "details\x1b[2J",
-  }).every((line) => !line.includes("\x1b")));
-  assert.ok(lines.slice(3, 9).every((line) => !line.includes("\x1b")));
-});
-
-test("inspector navigates items, scrolls content, and respects its render width", () => {
-  const tui = fakeTui(12);
-  let closed = false;
-  const items = extractTraceItems(entries());
-  items[3]!.output = Array.from({ length: 12 }, (_, index) => `line ${index}`).join("\n");
-  items[3]!.details = undefined;
-  const inspector = new TraceInspector(items, theme, tui, () => { closed = true; });
-
-  let lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("trace 4/4") && line.includes("browser") && line.includes("hidden")));
-  assert.ok(lines.every((line) => visibleWidth(line) <= 50));
+test("inspector navigates items and scrolls long content", () => {
+  const tui = fakeTui(6);
+  const items = [tool("read", numbered(10)), tool("bash", ["done"])];
+  const inspector = new TraceInspector(() => items, theme, tui, () => {});
+  inspector.render(40);
 
   inspector.handleInput("k");
-  lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("trace 3/4") && line.includes("bash")));
+  let lines = inspector.render(40);
+  assert.match(lines[0]!, /trace 1\/2 · read .* 1–4 of 10 ─$/);
+  assert.equal(items[0]!.component.expanded, true);
 
-  inspector.handleInput("j");
+  inspector.handleInput("\x1b[6~");
+  assert.match(inspector.render(40)[1]!, /^line 4/);
   inspector.handleInput("G");
-  lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("line 11")));
+  lines = inspector.render(40);
+  assert.match(lines[0]!, /7–10 of 10/);
+  assert.match(lines[4]!, /^line 9/);
+  inspector.handleMouse({ type: "wheel", wheelDelta: -2 } as never);
+  assert.match(inspector.render(40)[1]!, /^line 4/);
+  inspector.handleInput("g");
+  assert.match(inspector.render(40)[1]!, /^line 0/);
 
-  inspector.updateItem({
-    id: "live-thinking:1",
-    kind: "thinking",
-    name: "think",
-    status: "pending",
-    output: "partial thought",
-  });
-  lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("trace 5/5") && line.includes("thinking") && line.includes("pending")));
-  assert.ok(lines.some((line) => line.includes("partial thought")));
-
-  inspector.updateItem({
-    id: "call-live",
-    kind: "tool",
-    name: "write",
-    status: "pending",
-    call: { id: "call-live", name: "write", arguments: { path: "live.ts" } },
-    output: "partial output",
-  });
-  lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("trace 6/6") && line.includes("write") && line.includes("pending")));
-  assert.ok(lines.some((line) => line.includes("partial output")));
-
-  inspector.updateItem({
-    id: "call-live",
-    kind: "tool",
-    name: "write",
-    status: "success",
-    call: { id: "call-live", name: "write", arguments: { path: "live.ts" } },
-    output: "done",
-  });
-  lines = inspector.render(50);
-  assert.ok(lines.some((line) => line.includes("trace 6/6") && line.includes("success")));
-  assert.ok(lines.some((line) => line.includes("done")));
+  inspector.handleInput("k");
+  assert.match(inspector.render(40)[0]!, /trace 1\/2/);
+  inspector.handleInput("j");
+  assert.match(inspector.render(40)[0]!, /trace 2\/2 · bash/);
   assert.equal(tui.renders, 6);
+});
 
-  inspector.handleInput("\x1b");
-  assert.equal(closed, true);
+test("inspector follows new items and tails growing output", () => {
+  const items = [tool("bash", ["one"])];
+  const inspector = new TraceInspector(() => items, theme, fakeTui(5), () => {});
+  inspector.render(40);
 
-  closed = false;
-  inspector.handleInput("\x1bt");
-  assert.equal(closed, true);
+  items.push(tool("bash", ["start"]));
+  assert.match(inspector.render(40)[0]!, /trace 2\/2/);
+  items[1]!.component.lines = numbered(8);
+  let lines = inspector.render(40);
+  assert.match(lines[0]!, /6–8 of 8/);
+  assert.match(lines[3]!, /^line 7/);
+
+  inspector.handleInput("\x1b[5~");
+  items[1]!.component.lines = numbered(12);
+  assert.match(inspector.render(40)[0]!, /3–5 of 12/);
+
+  inspector.handleInput("k");
+  items.push(tool("read", ["new"]));
+  assert.match(inspector.render(40)[0]!, /trace 1\/3/);
+});
+
+test("inspector renders thinking in Pi's thinking style and updates it live", () => {
+  const colors: string[] = [];
+  const thinkingTheme = { fg: (color: string, text: string) => { colors.push(color); return text; } } as unknown as Theme;
+  const message = { content: [{ type: "thinking", thinking: "first idea" }] };
+  const reply = { lastMessage: message, render: () => ["the answer"], invalidate() {} };
+  const inspector = new TraceInspector(() => [{ component: reply, row: { name: "think", color: "thinkingText" } }], thinkingTheme, fakeTui(6), () => {});
+
+  let text = inspector.render(40).join("\n");
+  assert.match(text, /first idea/);
+  assert.doesNotMatch(text, /the answer/);
+  assert.ok(colors.includes("thinkingText"));
+
+  message.content.push({ type: "thinking", thinking: "second idea" });
+  text = inspector.render(40).join("\n");
+  assert.match(text, /first idea/);
+  assert.match(text, /second idea/);
+});
+
+test("inspector closes on Escape, Ctrl+C, and Alt+T", () => {
+  for (const key of ["\x1b", "\x03", "\x1bt"]) {
+    let closed = false;
+    new TraceInspector(() => [tool("bash", [])], theme, fakeTui(5), () => { closed = true; }).handleInput(key);
+    assert.equal(closed, true);
+  }
+});
+
+test("/trace inspects the rows of the rendered transcript", async () => {
+  const commands = new Map<string, (args: string, ctx: ExtensionContext) => Promise<void>>();
+  let shutdown!: () => void;
+  tinyTools({
+    on(name: string, handler: () => void) {
+      if (name === "session_shutdown") shutdown = handler;
+    },
+    registerCommand(name: string, options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> }) {
+      commands.set(name, options.handler);
+    },
+    registerShortcut() {},
+  } as unknown as ExtensionAPI);
+
+  const notifications: string[] = [];
+  let inspector: Component | undefined;
+  const ctx = {
+    mode: "tui",
+    ui: {
+      notify: (message: string) => notifications.push(message),
+      async custom(factory: (tui: TUI, theme: Theme, keybindings: unknown, done: () => void) => Component) {
+        inspector = factory(fakeTui(6), theme, undefined, () => {});
+      },
+    },
+  } as unknown as ExtensionContext;
+
+  await commands.get("trace")!("", ctx);
+  assert.deepEqual(notifications, ["No traceable items in the current branch"]);
+
+  const chatContainer = new Container();
+  const interactive = InteractiveMode.prototype as unknown as { renderSessionEntries(this: unknown, entries: unknown[]): void };
+  interactive.renderSessionEntries.call({ chatContainer, sessionManager: { getBranch: () => [] }, renderSessionItems() {} }, []);
+  const reply = new AssistantMessageComponent({
+    content: [{ type: "thinking", thinking: "plan the fix" }, { type: "text", text: "Fixed." }],
+    stopReason: "stop",
+  } as never, true, undefined, "");
+  chatContainer.addChild(reply);
+
+  await commands.get("trace")!("", ctx);
+  const text = inspector!.render(40).join("\n");
+  assert.match(text, /trace 1\/1 · think/);
+  assert.match(text, /plan the fix/);
+
+  shutdown();
 });

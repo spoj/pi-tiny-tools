@@ -6,12 +6,6 @@ export type TraceRow = {
   color: "accent" | "success" | "error" | "customMessageLabel" | "thinkingText";
 };
 
-export const TRACE_NAMES = {
-  thinking: "think",
-  compaction: "compaction",
-  branchSummary: "branch summary",
-} as const;
-
 const PREFIX_WIDTH = 3;
 
 export function thinkingText(component: unknown): string {
