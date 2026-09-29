@@ -34,7 +34,7 @@ test("transcript keeps the full active branch across compaction, reload, and tre
     sessionManager,
     renderSessionItems(rendered: unknown[]) { items.push(...rendered); },
     addMessageToChat(message: unknown) { items.push(message); },
-    chatContainer: { clear() { items.length = 0; } },
+    chatContainer: { clear() { items.length = 0; }, children: items },
     settingsManager: { getShowTerminalProgress: () => false },
     clearStatusIndicator() {},
     footer: { invalidate() {} },
@@ -88,4 +88,49 @@ test("transcript keeps the full active branch across compaction, reload, and tre
   sessionManager.newSession();
   prototype.rebuildChatFromMessages.call(interactive);
   assert.deepEqual(items, []);
+});
+
+test("a compaction appended at a turn boundary keeps the history once", async (t) => {
+  const prototype = InteractiveMode.prototype as unknown as {
+    renderInitialMessages(): void;
+    handleEvent(event: unknown): Promise<void>;
+  };
+  let shutdown: () => void;
+  tinyTools({
+    on(name: string, handler: () => void) {
+      if (name === "session_shutdown") shutdown = handler;
+    },
+    registerCommand() {},
+    registerShortcut() {},
+  } as unknown as ExtensionAPI);
+  t.after(() => shutdown());
+
+  const sessionManager = SessionManager.inMemory();
+  sessionManager.appendMessage({ role: "user", content: "old request", timestamp: 1 });
+  const kept = sessionManager.appendMessage({ role: "user", content: "recent request", timestamp: 2 });
+  const items: unknown[] = [];
+  const interactive = {
+    isInitialized: true,
+    entriesRenderedByBoundaryCompaction: new Set<string>(),
+    renderSessionEntries: (InteractiveMode.prototype as unknown as { renderSessionEntries: unknown }).renderSessionEntries,
+    sessionManager,
+    renderSessionItems(rendered: unknown[]) { items.push(...rendered); },
+    addMessageToChat(message: unknown) { items.push(message); },
+    chatContainer: { clear() { items.length = 0; }, children: items },
+    footer: { invalidate() {} },
+    ui: { requestRender() {} },
+    renderProjectTrustWarningIfNeeded() {},
+    showStatus() {},
+  };
+  const texts = () => items.map((item) => {
+    const message = item as { content?: string; summary?: string };
+    return message.content ?? message.summary;
+  });
+
+  prototype.renderInitialMessages.call(interactive);
+  const compaction = sessionManager.getEntry(sessionManager.appendCompaction("boundary summary", kept, 1000))!;
+  const chained = sessionManager.getEntry(sessionManager.appendCustomMessageEntry("note", "after summary", true))!;
+  await prototype.handleEvent.call(interactive, { type: "entry_appended", entry: compaction });
+  await prototype.handleEvent.call(interactive, { type: "entry_appended", entry: chained });
+  assert.deepEqual(texts(), ["old request", "recent request", "boundary summary", "after summary"]);
 });

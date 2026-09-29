@@ -174,10 +174,18 @@ export default function tinyTools(pi: ExtensionAPI): void {
       patchMethod(interactive, "renderSessionEntries", (original) => function (entries, options): void {
         chat = this.chatContainer;
         const branch = this.sessionManager.getBranch();
-        const latestCompaction = branch.filter((entry) => entry.type === "compaction").at(-1);
-        // Pi appends the newest summary separately when compaction finishes.
-        const appendSummary = latestCompaction && !entries.some((entry) => entry.id === latestCompaction.id);
-        original.call(this, branch.filter((entry) => !appendSummary || entry !== latestCompaction), options);
+        const compaction = branch.filter((entry) => entry.type === "compaction").at(-1);
+        if (!compaction || entries.some((entry) => entry.id === compaction.id)) {
+          original.call(this, branch, options);
+        } else if (this.chatContainer.children.length === 0) {
+          // After compacting, Pi clears the chat, renders what precedes the newest summary, then appends the summary.
+          const index = branch.indexOf(compaction);
+          const rendered = new Set(entries.map((entry) => entry.id));
+          original.call(this, branch.filter((entry, i) => i < index || rendered.has(entry.id)), options);
+        } else {
+          // A turn-boundary compaction renders the entries chained after its summary separately.
+          original.call(this, entries, options);
+        }
       }),
       patchMethod(interactive, "addMessageToChat", (original) => function (this: unknown, message, options): void {
         original.call(this, message.role === "custom" ? { ...message, display: true } : message, options);
