@@ -159,7 +159,6 @@ export function extractTraceItems(entries: SessionEntry[]): TraceItem[] {
         isError: entry.message.isError,
         timestamp: entry.message.timestamp,
         ...(entry.message.usage === undefined ? {} : { usage: entry.message.usage }),
-        ...(entry.message.addedToolNames === undefined ? {} : { addedToolNames: entry.message.addedToolNames }),
       };
       item.details = entry.message.details;
     }

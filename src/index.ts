@@ -11,8 +11,8 @@ import {
   type SessionEntry,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer, Text } from "@earendil-works/pi-tui";
-import { renderTraceGroup, stripTerminalSequences, TRACE_NAMES, type TraceRow } from "./format.ts";
+import { Container, Spacer, type Component } from "@earendil-works/pi-tui";
+import { renderTraceGroup, stripTerminalSequences, thinkingText, type TraceRow } from "./format.ts";
 import {
   finishLiveAssistant,
   finishLiveTool,
@@ -56,8 +56,6 @@ type ShellComponent = {
   tinyToolsShellMarker?: "!" | "!!";
 };
 
-type InteractiveMessage = { role?: unknown; display?: unknown };
-
 function shellMarker(component: ShellComponent): "!" | "!!" {
   if (component.tinyToolsShellMarker) return component.tinyToolsShellMarker;
   const header = component.contentContainer.children[0] as { text?: unknown } | undefined;
@@ -77,27 +75,21 @@ function rememberShellMarkerWrapper<T extends (...args: never[]) => void>(origin
   } as T;
 }
 
-function customEntry(component: unknown): { customType?: unknown } | undefined {
-  const entry = (component as { entry?: { type?: unknown; customType?: unknown } } | undefined)?.entry;
-  return entry?.type === "custom" ? entry : undefined;
+function named(name: unknown, fallback: string): string {
+  return typeof name === "string" && name ? name : fallback;
 }
 
 function traceRow(component: unknown): TraceRow | undefined {
   if (component instanceof ToolExecutionComponent) {
-    if ((component as unknown as { hideComponent?: unknown }).hideComponent === true) return undefined;
-    const tool = component as unknown as { toolName?: unknown; result?: { isError?: unknown }; isPartial?: unknown };
-    const name = typeof tool.toolName === "string" && tool.toolName ? tool.toolName : "tool";
+    const tool = component as unknown as { hideComponent?: unknown; toolName?: unknown; result?: { isError?: unknown }; isPartial?: unknown };
+    if (tool.hideComponent === true) return undefined;
     return {
-      name,
+      name: named(tool.toolName, "tool"),
       color: tool.result?.isError ? "error" : tool.result && tool.isPartial !== true ? "success" : "accent",
     };
   }
-  if (component instanceof CustomMessageComponent) {
-    const customType = (component as unknown as { message?: { customType?: unknown } }).message?.customType;
-    return {
-      name: typeof customType === "string" && customType ? customType : "extension",
-      color: "customMessageLabel",
-    };
+  if (component instanceof AssistantMessageComponent) {
+    return thinkingText(component) ? { name: "think", color: "thinkingText" } : undefined;
   }
   if (component instanceof BashExecutionComponent) {
     const shell = component as unknown as ShellComponent;
@@ -106,97 +98,56 @@ function traceRow(component: unknown): TraceRow | undefined {
       color: shell.status === "running" ? "accent" : shell.status === "complete" ? "success" : "error",
     };
   }
-  if (component instanceof BranchSummaryMessageComponent) {
-    return { name: TRACE_NAMES.branchSummary, color: "customMessageLabel" };
+  if (component instanceof CustomMessageComponent) {
+    const message = (component as unknown as { message?: { customType?: unknown } }).message;
+    return { name: named(message?.customType, "extension"), color: "customMessageLabel" };
   }
-  if (component instanceof CompactionSummaryMessageComponent) {
-    return { name: TRACE_NAMES.compaction, color: "customMessageLabel" };
-  }
+  if (component instanceof BranchSummaryMessageComponent) return { name: "branch summary", color: "customMessageLabel" };
+  if (component instanceof CompactionSummaryMessageComponent) return { name: "compaction", color: "customMessageLabel" };
   if (component instanceof SkillInvocationMessageComponent) {
-    const skill = component as unknown as { skillBlock: { name: string } };
-    return { name: skill.skillBlock.name, color: "customMessageLabel" };
+    return { name: (component as unknown as { skillBlock: { name: string } }).skillBlock.name, color: "customMessageLabel" };
   }
-  const entry = customEntry(component);
-  if (entry) {
-    const name = typeof entry.customType === "string" && entry.customType ? entry.customType : "extension";
-    return { name, color: "customMessageLabel" };
-  }
-  return undefined;
+  const entry = (component as { entry?: { type?: unknown; customType?: unknown } } | undefined)?.entry;
+  return entry?.type === "custom" ? { name: named(entry.customType, "extension"), color: "customMessageLabel" } : undefined;
 }
 
-function hasThinking(component: unknown): boolean {
-  if (!(component instanceof AssistantMessageComponent)) return false;
-  const message = (component as unknown as { lastMessage?: { content?: Array<{ type?: unknown; thinking?: unknown }> } }).lastMessage;
-  return message?.content?.some((part) => part.type === "thinking" && typeof part.thinking === "string" && part.thinking.trim()) === true;
+function isTraced(component: unknown): boolean {
+  return traceRow(component) !== undefined;
 }
 
-function isSilent(component: unknown): boolean {
-  if (!(component instanceof Text)) return false;
-  const text = stripTerminalSequences((component as unknown as { text: string }).text);
-  return /^(?:(?:Compaction|Branch summary): .* tokens billed|Cache miss(?: after .*?)?: .* tokens re-billed)/.test(text);
-}
-
-function renderTraceGroups(children: Array<{ render: (width: number) => string[] }>, width: number): string[] {
+function renderTraceGroups(children: Component[], width: number): string[] {
   const output: string[] = [];
-  const traces: TraceRow[] = [];
-  let pendingSpacing: string[] = [];
-  let skipSilentSpacing = false;
-  let silentTail = false;
-  let previous: "content" | "trace" | undefined;
+  const rows: TraceRow[] = [];
+  let spacing: string[] = [];
 
-  const flushTraces = (): void => {
-    if (traces.length === 0) return;
-    if (previous === "content") output.push("");
-    output.push(...renderTraceGroup(traces, width, currentTheme?.()));
-    traces.length = 0;
-    previous = "trace";
+  const flushRows = (): void => {
+    if (rows.length === 0) return;
+    if (output.length > 0) output.push("");
+    output.push(...renderTraceGroup(rows, width, currentTheme?.()));
+    rows.length = 0;
   };
 
   for (const child of children) {
     if (child instanceof Spacer) {
-      if (!skipSilentSpacing) pendingSpacing.push(...child.render(width));
+      spacing.push(...child.render(width));
       continue;
     }
     const row = traceRow(child);
     if (row) {
-      traces.push(row);
-      pendingSpacing = [];
-      skipSilentSpacing = false;
-      silentTail = false;
-      continue;
+      rows.push(row);
+      spacing = [];
+      // A reply keeps its text; everything else shrinks to its row.
+      if (!(child instanceof AssistantMessageComponent)) continue;
     }
-    if (isSilent(child)) {
-      skipSilentSpacing = true;
-      silentTail = true;
-      continue;
-    }
-
-    skipSilentSpacing = false;
-    silentTail = false;
-    if (hasThinking(child)) {
-      traces.push({ name: TRACE_NAMES.thinking, color: "thinkingText" });
-      pendingSpacing = [];
-      const lines = child.render(width);
-      if (lines.length > 0) {
-        flushTraces();
-        if (previous === "trace") output.push("");
-        output.push(...lines);
-        previous = "content";
-      }
-      continue;
-    }
-
     const lines = child.render(width);
     if (lines.length === 0) continue;
-
-    flushTraces();
-    output.push(...pendingSpacing, ...lines);
-    pendingSpacing = [];
-    previous = "content";
+    flushRows();
+    output.push(...spacing, ...lines);
+    spacing = [];
   }
 
-  flushTraces();
-  return silentTail ? output : [...output, ...pendingSpacing];
+  flushRows();
+  return [...output, ...spacing];
 }
 
 export default function tinyTools(pi: ExtensionAPI): void {
@@ -210,6 +161,14 @@ export default function tinyTools(pi: ExtensionAPI): void {
   });
 
   if (patchUsers === 0) {
+    const interactive = InteractiveMode.prototype as unknown as {
+      addMessageToChat(this: unknown, message: { role?: unknown; display?: unknown }, options?: unknown): void;
+      renderSessionEntries(this: { sessionManager: { getBranch(): SessionEntry[] } }, entries: SessionEntry[], options?: unknown): void;
+      addCacheMissNotice(): void;
+      addCacheWarmingUsage(): void;
+      addCompactionCostNotice(): void;
+    };
+    const silence = () => () => {};
     restorePatches = [
       patchMethod(BashExecutionComponent.prototype, "appendOutput", rememberShellMarkerWrapper),
       patchMethod(BashExecutionComponent.prototype, "setComplete", rememberShellMarkerWrapper),
@@ -217,9 +176,10 @@ export default function tinyTools(pi: ExtensionAPI): void {
       patchMethod(BashExecutionComponent.prototype, "invalidate", rememberShellMarkerWrapper),
       patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
         const lines = original.call(this, width);
-        if (!hasThinking(this)) return lines.every(isBlank) ? [] : lines;
-        const firstContent = lines.findIndex((line) => !isBlank(line));
-        return firstContent === -1 ? [] : lines.slice(firstContent);
+        if (lines.every(isBlank)) return [];
+        if (!thinkingText(this)) return lines;
+        // Drop the hidden thinking label but keep the leading spacer, which carries Pi's prompt marker.
+        return [lines[0]!, ...lines.slice(lines.findIndex((line) => !isBlank(line)))];
       }),
       patchMethod(AssistantMessageComponent.prototype, "updateContent", (original) => function (
         this: AssistantMessageComponent,
@@ -230,37 +190,25 @@ export default function tinyTools(pi: ExtensionAPI): void {
         original.call(this, message, isStreaming);
       }),
       patchMethod(Container.prototype, "render", (original) => function (this: Container, width: number) {
-        return this.children.some((child) => traceRow(child) !== undefined || isSilent(child) || hasThinking(child))
-          ? renderTraceGroups(this.children, width)
-          : original.call(this, width);
+        return this.children.some(isTraced) ? renderTraceGroups(this.children, width) : original.call(this, width);
       }),
-      patchMethod(
-        InteractiveMode.prototype as unknown as {
-          renderSessionEntries(this: { sessionManager: { getBranch(): SessionEntry[] } }, entries: SessionEntry[], options?: unknown): void;
-        },
-        "renderSessionEntries",
-        (original) => function (entries, options): void {
-          const branch = this.sessionManager.getBranch();
-          const latestCompaction = branch.filter((entry) => entry.type === "compaction").at(-1);
-          // Pi appends the newest summary separately when compaction finishes.
-          const appendSummary = latestCompaction && !entries.some((entry) => entry.id === latestCompaction.id);
-          const transcript = branch.filter((entry) => !appendSummary || entry !== latestCompaction);
-          original.call(this, transcript, options);
-        },
-      ),
-      patchMethod(
-        InteractiveMode.prototype as unknown as {
-          addMessageToChat(this: unknown, message: InteractiveMessage, options?: unknown): void;
-        },
-        "addMessageToChat",
-        (original) => function (this: unknown, message: InteractiveMessage, options?: unknown): void {
-          if (message.role === "custom" && !message.display) {
-            original.call(this, { ...message, display: true }, options);
-            return;
-          }
-          original.call(this, message, options);
-        },
-      ),
+      // Pi routes clicks by each child's native height, and a click on a reply would reveal its thinking.
+      patchMethod(Container.prototype, "handleMouse", (original) => function (this: Container, event) {
+        return this.children.some(isTraced) ? undefined : original.call(this, event);
+      }),
+      patchMethod(interactive, "renderSessionEntries", (original) => function (entries, options): void {
+        const branch = this.sessionManager.getBranch();
+        const latestCompaction = branch.filter((entry) => entry.type === "compaction").at(-1);
+        // Pi appends the newest summary separately when compaction finishes.
+        const appendSummary = latestCompaction && !entries.some((entry) => entry.id === latestCompaction.id);
+        original.call(this, branch.filter((entry) => !appendSummary || entry !== latestCompaction), options);
+      }),
+      patchMethod(interactive, "addMessageToChat", (original) => function (this: unknown, message, options): void {
+        original.call(this, message.role === "custom" ? { ...message, display: true } : message, options);
+      }),
+      patchMethod(interactive, "addCacheMissNotice", silence),
+      patchMethod(interactive, "addCacheWarmingUsage", silence),
+      patchMethod(interactive, "addCompactionCostNotice", silence),
     ];
   }
   patchUsers++;

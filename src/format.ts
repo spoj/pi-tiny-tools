@@ -14,6 +14,13 @@ export const TRACE_NAMES = {
 
 const PREFIX_WIDTH = 3;
 
+export function thinkingText(component: unknown): string {
+  const message = (component as { lastMessage?: { content?: Array<{ type?: unknown; thinking?: unknown }> } }).lastMessage;
+  return (message?.content ?? [])
+    .flatMap((part) => part.type === "thinking" && typeof part.thinking === "string" && part.thinking.trim() ? [part.thinking.trim()] : [])
+    .join("\n\n");
+}
+
 export function stripTerminalSequences(text: string): string {
   let output = "";
   let start = 0;
