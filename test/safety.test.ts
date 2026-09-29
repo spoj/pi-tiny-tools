@@ -69,7 +69,7 @@ test("internal traces stay compact while native expansion state changes", () => 
   tinyTools(pi);
 
   assert.equal(toolPrototype.render, native.toolRender);
-  assert.ok(["appendOutput", "setComplete", "setExpanded", "invalidate"].every((key, index) => bashPrototype[key] !== native.bash[index]));
+  assert.deepEqual(["appendOutput", "setComplete", "setExpanded", "invalidate"].map((key) => bashPrototype[key]), native.bash);
   assert.equal(Object.hasOwn(CustomMessageComponent.prototype, "render"), false);
   assert.notEqual(assistantPrototype.render, native.assistantRender);
   assert.equal(assistantPrototype.setHideThinkingBlock, native.setHideThinking);
@@ -135,15 +135,14 @@ test("internal traces stay compact while native expansion state changes", () => 
   const colors: Array<[string, string]> = [];
   const bashUi = { requestRender() {} } as ConstructorParameters<typeof BashExecutionComponent>[1];
   const shells = [new BashExecutionComponent("pwd", bashUi, true), new BashExecutionComponent("pwd", bashUi, true), new BashExecutionComponent("pwd", bashUi)];
-  const dimHeader = (shells[0] as unknown as { contentContainer: { children: Array<{ text: string }> } }).contentContainer.children[0]!.text;
+  const dimRule = (shells[0]!.children[1] as unknown as { color: (text: string) => string }).color("─");
   handlers.get("session_start")?.({}, {
     mode: "tui",
     ui: {
       theme: {
-        bold: (text: string) => text,
         fg: (color: string, text: string) => {
           colors.push([color, text]);
-          return color === "dim" && text === "$ pwd" ? dimHeader : text;
+          return color === "dim" && text === "─" ? dimRule : text;
         },
       },
       setHiddenThinkingLabel: (label: string) => { hiddenThinkingLabel = label; },
@@ -282,7 +281,6 @@ test("internal traces stay compact while native expansion state changes", () => 
   handlers.get("session_shutdown")?.();
 
   assert.equal(toolPrototype.render, native.toolRender);
-  assert.deepEqual(["appendOutput", "setComplete", "setExpanded", "invalidate"].map((key) => bashPrototype[key]), native.bash);
   assert.equal(assistantPrototype.render, native.assistantRender);
   assert.equal(assistantPrototype.setHideThinkingBlock, native.setHideThinking);
   assert.equal(assistantPrototype.updateContent, native.updateContent);

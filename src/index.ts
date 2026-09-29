@@ -49,32 +49,6 @@ function isBlank(line: string): boolean {
   return stripTerminalSequences(line).trim() === "";
 }
 
-type ShellComponent = {
-  command: string;
-  contentContainer: { children: unknown[] };
-  status: "running" | "complete" | "cancelled" | "error";
-  tinyToolsShellMarker?: "!" | "!!";
-};
-
-function shellMarker(component: ShellComponent): "!" | "!!" {
-  if (component.tinyToolsShellMarker) return component.tinyToolsShellMarker;
-  const header = component.contentContainer.children[0] as { text?: unknown } | undefined;
-  const theme = currentTheme?.();
-  return theme && header?.text === theme.fg("dim", theme.bold(`$ ${component.command}`)) ? "!!" : "!";
-}
-
-function rememberShellMarker(component: BashExecutionComponent): void {
-  const shell = component as unknown as ShellComponent;
-  shell.tinyToolsShellMarker = shellMarker(shell);
-}
-
-function rememberShellMarkerWrapper<T extends (...args: never[]) => void>(original: T): T {
-  return function (this: BashExecutionComponent, ...args: Parameters<T>): void {
-    rememberShellMarker(this);
-    original.apply(this, args);
-  } as T;
-}
-
 function named(name: unknown, fallback: string): string {
   return typeof name === "string" && name ? name : fallback;
 }
@@ -92,10 +66,13 @@ function traceRow(component: unknown): TraceRow | undefined {
     return thinkingText(component) ? { name: "think", color: "thinkingText" } : undefined;
   }
   if (component instanceof BashExecutionComponent) {
-    const shell = component as unknown as ShellComponent;
+    // Pi keeps no excludeFromContext flag, but `!!` commands draw their borders dim.
+    const border = component.children[1] as unknown as { color: (text: string) => string };
+    const theme = currentTheme?.();
+    const status = (component as unknown as { status: string }).status;
     return {
-      name: shellMarker(shell),
-      color: shell.status === "running" ? "accent" : shell.status === "complete" ? "success" : "error",
+      name: theme && border.color("─") === theme.fg("dim", "─") ? "!!" : "!",
+      color: status === "running" ? "accent" : status === "complete" ? "success" : "error",
     };
   }
   if (component instanceof CustomMessageComponent) {
@@ -170,10 +147,6 @@ export default function tinyTools(pi: ExtensionAPI): void {
     };
     const silence = () => () => {};
     restorePatches = [
-      patchMethod(BashExecutionComponent.prototype, "appendOutput", rememberShellMarkerWrapper),
-      patchMethod(BashExecutionComponent.prototype, "setComplete", rememberShellMarkerWrapper),
-      patchMethod(BashExecutionComponent.prototype, "setExpanded", rememberShellMarkerWrapper),
-      patchMethod(BashExecutionComponent.prototype, "invalidate", rememberShellMarkerWrapper),
       patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
         const lines = original.call(this, width);
         if (lines.every(isBlank)) return [];
