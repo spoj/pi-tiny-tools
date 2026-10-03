@@ -128,7 +128,8 @@ test("/trace inspects the rows of the rendered transcript", async () => {
   const commands = new Map<string, (args: string, ctx: ExtensionContext) => Promise<void>>();
   let shutdown!: () => void;
   tinyTools({
-    on(name: string, handler: () => void) {
+    on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
+      if (name === "session_start") handler({}, { mode: "tui", ui: { setHiddenThinkingLabel() {} } });
       if (name === "session_shutdown") shutdown = handler;
     },
     registerCommand(name: string, options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> }) {

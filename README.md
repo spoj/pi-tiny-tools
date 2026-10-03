@@ -33,7 +33,7 @@ pi -e .
 
 ## How it works
 
-The extension patches Pi's transcript rendering for built-in, extension, and MCP tools. It rebuilds the displayed transcript from the full branch rather than the compacted model context. Custom messages use their `customType` as the colored name, including after session reload. The inspector draws the transcript's own hidden components, so extension renderers apply there too. In fullscreen mode, clicking the compact transcript doesn't expand hidden items or thinking.
+The extension patches Pi's transcript rendering for built-in, extension, and MCP tools, only for the interactive TUI session; in-process sessions such as workflow subagents are left untouched. It rebuilds the displayed transcript from the full branch rather than the compacted model context. Custom messages use their `customType` as the colored name, including after session reload. The inspector draws the transcript's own hidden components, so extension renderers apply there too. In fullscreen mode, clicking the compact transcript doesn't expand hidden items or thinking.
 
 It relies on Pi's private component state, so Pi updates may break it.
 

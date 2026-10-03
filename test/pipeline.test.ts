@@ -31,7 +31,7 @@ test("hidden custom messages stay hidden through the real agent session pipeline
     agentDir,
     resourceLoaderOptions: { extensionFactories: [tinyTools] },
   });
-  assert.notEqual(interactivePrototype.addMessageToChat, nativeAddMessageToChat);
+  assert.equal(interactivePrototype.addMessageToChat, nativeAddMessageToChat);
 
   const { session } = await createAgentSessionFromServices({
     services,
@@ -39,6 +39,7 @@ test("hidden custom messages stay hidden through the real agent session pipeline
     sessionStartEvent: { type: "session_start", reason: "startup" },
   });
   await session.bindExtensions({ mode: "tui" });
+  assert.notEqual(interactivePrototype.addMessageToChat, nativeAddMessageToChat);
   t.after(async () => {
     await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
     session.dispose();

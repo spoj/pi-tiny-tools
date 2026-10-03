@@ -67,6 +67,25 @@ test("internal traces stay compact while native expansion state changes", () => 
   } as unknown as ExtensionAPI;
 
   tinyTools(pi);
+  assert.equal(containerPrototype.render, native.containerRender);
+
+  let hiddenThinkingLabel = "Thinking...";
+  const colors: Array<[string, string]> = [];
+  const bashUi = { requestRender() {} } as ConstructorParameters<typeof BashExecutionComponent>[1];
+  const shells = [new BashExecutionComponent("pwd", bashUi, true), new BashExecutionComponent("pwd", bashUi, true), new BashExecutionComponent("pwd", bashUi)];
+  const dimRule = (shells[0]!.children[1] as unknown as { color: (text: string) => string }).color("─");
+  handlers.get("session_start")?.({}, {
+    mode: "tui",
+    ui: {
+      theme: {
+        fg: (color: string, text: string) => {
+          colors.push([color, text]);
+          return color === "dim" && text === "─" ? dimRule : text;
+        },
+      },
+      setHiddenThinkingLabel: (label: string) => { hiddenThinkingLabel = label; },
+    },
+  });
 
   assert.equal(toolPrototype.render, native.toolRender);
   assert.deepEqual(["appendOutput", "setComplete", "setExpanded", "invalidate"].map((key) => bashPrototype[key]), native.bash);
@@ -80,10 +99,6 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.notEqual(interactivePrototype.addMessageToChat, native.addMessageToChat);
   assert.deepEqual([...shortcuts.keys()], ["alt+t"]);
 
-  handlers.get("session_start")?.({}, {
-    mode: "tui",
-    ui: { setHiddenThinkingLabel() {} },
-  });
   const sessionManager = SessionManager.inMemory();
   sessionManager.appendCustomMessageEntry("hidden", "secret", false);
   const contextEntry = sessionManager.buildContextEntries()[0];
@@ -131,23 +146,6 @@ test("internal traces stay compact while native expansion state changes", () => 
   for (const key of NOTICES) interactivePrototype[key].call(notices);
   assert.equal(notices.chatContainer.children.length, 0);
 
-  let hiddenThinkingLabel = "Thinking...";
-  const colors: Array<[string, string]> = [];
-  const bashUi = { requestRender() {} } as ConstructorParameters<typeof BashExecutionComponent>[1];
-  const shells = [new BashExecutionComponent("pwd", bashUi, true), new BashExecutionComponent("pwd", bashUi, true), new BashExecutionComponent("pwd", bashUi)];
-  const dimRule = (shells[0]!.children[1] as unknown as { color: (text: string) => string }).color("─");
-  handlers.get("session_start")?.({}, {
-    mode: "tui",
-    ui: {
-      theme: {
-        fg: (color: string, text: string) => {
-          colors.push([color, text]);
-          return color === "dim" && text === "─" ? dimRule : text;
-        },
-      },
-      setHiddenThinkingLabel: (label: string) => { hiddenThinkingLabel = label; },
-    },
-  });
   assert.equal(hiddenThinkingLabel, "");
 
   shells[0]!.setExpanded(true);
@@ -292,28 +290,34 @@ test("internal traces stay compact while native expansion state changes", () => 
   assert.deepEqual(NOTICES.map((key) => interactivePrototype[key]), native.notices);
 });
 
-test("duplicate initialization restores shared patches after both shutdowns", () => {
+test("in-process print sessions neither patch nor replace the TUI theme", () => {
   initTheme();
   const containerPrototype = Container.prototype as unknown as { render: unknown };
   const nativeContainerRender = containerPrototype.render;
-  const shutdowns: Array<() => void> = [];
-  const pi = {
-    on(name: string, handler: () => void) {
-      if (name === "session_shutdown") shutdowns.push(handler);
-    },
-    registerCommand() {},
-    registerShortcut() {},
-  } as unknown as ExtensionAPI;
+  const load = () => {
+    const handlers = new Map<string, (event?: unknown, ctx?: unknown) => void>();
+    tinyTools({
+      on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
+        handlers.set(name, handler);
+      },
+      registerCommand() {},
+      registerShortcut() {},
+    } as unknown as ExtensionAPI);
+    return handlers;
+  };
+  const tui = load();
+  const subagent = load();
 
-  tinyTools(pi);
-  tinyTools(pi);
+  tui.get("session_start")!({}, { mode: "tui", ui: { theme: { fg: (_color: string, text: string) => text }, setHiddenThinkingLabel() {} } });
+  const patchedRender = containerPrototype.render;
+  subagent.get("session_start")!({}, { mode: "print", get ui(): never { throw new Error("stale subagent ctx"); } });
+  subagent.get("session_shutdown")!();
+  assert.equal(containerPrototype.render, patchedRender);
 
-  assert.equal(shutdowns.length, 2);
-  assert.notEqual(containerPrototype.render, nativeContainerRender);
+  const chat = new Container();
+  chat.addChild({ entry: { type: "custom", customType: "note" }, render: () => ["note"], invalidate() {} } as unknown as Text);
+  assert.match(chat.render(60).join("\n"), /note/);
 
-  shutdowns[0]!();
-  assert.notEqual(containerPrototype.render, nativeContainerRender);
-
-  shutdowns[1]!();
+  tui.get("session_shutdown")!();
   assert.equal(containerPrototype.render, nativeContainerRender);
 });

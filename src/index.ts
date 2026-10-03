@@ -17,8 +17,6 @@ import { showTraceInspector, type TraceItem } from "./trace-inspector.ts";
 
 let currentTheme: (() => Theme | undefined) | undefined;
 let chat: Container | undefined;
-let patchUsers = 0;
-let restorePatches: (() => void)[] | undefined;
 
 function patchMethod<T extends object, K extends keyof T>(
   target: T,
@@ -135,7 +133,13 @@ export default function tinyTools(pi: ExtensionAPI): void {
     handler: (ctx) => showTraceInspector(ctx, traceItems),
   });
 
-  if (patchUsers === 0) {
+  let restorePatches: (() => void)[] = [];
+
+  // Workflow subagents load this extension in the same process; only the TUI session may patch or theme.
+  pi.on("session_start", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    currentTheme = () => ctx.ui.theme;
+    ctx.ui.setHiddenThinkingLabel("");
     const interactive = InteractiveMode.prototype as unknown as {
       addMessageToChat(this: unknown, message: { role?: unknown; display?: unknown }, options?: unknown): void;
       renderSessionEntries(
@@ -194,19 +198,12 @@ export default function tinyTools(pi: ExtensionAPI): void {
       patchMethod(interactive, "addCacheWarmingUsage", silence),
       patchMethod(interactive, "addCompactionCostNotice", silence),
     ];
-  }
-  patchUsers++;
-
-  pi.on("session_start", (_event, ctx) => {
-    currentTheme = () => ctx.ui.theme;
-    ctx.ui.setHiddenThinkingLabel("");
   });
 
   pi.on("session_shutdown", () => {
-    patchUsers--;
-    if (patchUsers > 0) return;
-    for (const restore of restorePatches!.reverse()) restore();
-    restorePatches = undefined;
+    if (restorePatches.length === 0) return;
+    for (const restore of restorePatches.reverse()) restore();
+    restorePatches = [];
     currentTheme = undefined;
     chat = undefined;
   });

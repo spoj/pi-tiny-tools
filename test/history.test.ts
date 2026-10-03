@@ -13,7 +13,8 @@ test("transcript keeps the full active branch across compaction, reload, and tre
   const nativeRender = prototype.renderSessionEntries;
   let shutdown: () => void;
   tinyTools({
-    on(name: string, handler: () => void) {
+    on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
+      if (name === "session_start") handler({}, { mode: "tui", ui: { setHiddenThinkingLabel() {} } });
       if (name === "session_shutdown") shutdown = handler;
     },
     registerCommand() {},
@@ -97,7 +98,8 @@ test("a compaction appended at a turn boundary keeps the history once", async (t
   };
   let shutdown: () => void;
   tinyTools({
-    on(name: string, handler: () => void) {
+    on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
+      if (name === "session_start") handler({}, { mode: "tui", ui: { setHiddenThinkingLabel() {} } });
       if (name === "session_shutdown") shutdown = handler;
     },
     registerCommand() {},
