@@ -1,6 +1,6 @@
 import { getMarkdownTheme, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Component, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { stripTerminalSequences, thinkingText, type TraceRow } from "./format.ts";
+import { messageText, stripTerminalSequences, type TraceRow } from "./format.ts";
 
 export type TraceItem = { component: Component; row: TraceRow };
 
@@ -101,7 +101,7 @@ export class TraceInspector implements Component {
   }
 
   private renderItem(component: Component, width: number): string[] {
-    const thinking = thinkingText(component);
+    const thinking = messageText(component, "thinking");
     if (!thinking) return component.render(width);
     if (thinking !== this.thinkingSource) {
       this.thinkingSource = thinking;

@@ -3,15 +3,18 @@ import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export type TraceRow = {
   name: string;
-  color: "accent" | "success" | "error" | "customMessageLabel" | "thinkingText";
+  color: "accent" | "success" | "error" | "customMessageLabel" | "thinkingText" | "text";
 };
 
 const PREFIX_WIDTH = 3;
 
-export function thinkingText(component: unknown): string {
-  const message = (component as { lastMessage?: { content?: Array<{ type?: unknown; thinking?: unknown }> } }).lastMessage;
+export function messageText(component: unknown, type: "thinking" | "text"): string {
+  const message = (component as { lastMessage?: { content?: Array<Record<string, unknown>> } }).lastMessage;
   return (message?.content ?? [])
-    .flatMap((part) => part.type === "thinking" && typeof part.thinking === "string" && part.thinking.trim() ? [part.thinking.trim()] : [])
+    .flatMap((part) => {
+      const text = part[type];
+      return part.type === type && typeof text === "string" && text.trim() ? [text.trim()] : [];
+    })
     .join("\n\n");
 }
 

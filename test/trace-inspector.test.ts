@@ -4,6 +4,7 @@ import {
   AssistantMessageComponent,
   initTheme,
   InteractiveMode,
+  UserMessageComponent,
   type ExtensionAPI,
   type ExtensionContext,
   type Theme,
@@ -124,7 +125,7 @@ test("inspector closes on Escape, Ctrl+C, and Alt+T", () => {
   }
 });
 
-test("/trace inspects the rows of the rendered transcript", async () => {
+test("/trace steps through the rendered transcript, including your messages and replies", async () => {
   const commands = new Map<string, (args: string, ctx: ExtensionContext) => Promise<void>>();
   let shutdown!: () => void;
   tinyTools({
@@ -156,16 +157,30 @@ test("/trace inspects the rows of the rendered transcript", async () => {
   const chatContainer = new Container();
   const interactive = InteractiveMode.prototype as unknown as { renderSessionEntries(this: unknown, entries: unknown[]): void };
   interactive.renderSessionEntries.call({ chatContainer, sessionManager: { getBranch: () => [] }, renderSessionItems() {} }, []);
-  const reply = new AssistantMessageComponent({
-    content: [{ type: "thinking", thinking: "plan the fix" }, { type: "text", text: "Fixed." }],
+  chatContainer.addChild(new UserMessageComponent("fix the bug"));
+  chatContainer.addChild(new AssistantMessageComponent({
+    content: [{ type: "thinking", thinking: "plan the fix" }, { type: "toolCall" }],
+    stopReason: "toolUse",
+  } as never, true, undefined, ""));
+  chatContainer.addChild(new AssistantMessageComponent({
+    content: [{ type: "thinking", thinking: "check it" }, { type: "text", text: "Fixed." }],
     stopReason: "stop",
-  } as never, true, undefined, "");
-  chatContainer.addChild(reply);
+  } as never, true, undefined, ""));
 
   await commands.get("trace")!("", ctx);
-  const text = inspector!.render(40).join("\n");
-  assert.match(text, /trace 1\/1 · think/);
-  assert.match(text, /plan the fix/);
+  const pages: string[] = [];
+  for (let page = 0; page < 4; page++) {
+    const lines = inspector!.render(40);
+    assert.ok(lines.every((line) => visibleWidth(line) === 40));
+    pages.push(lines.join("\n"));
+    inspector!.handleInput!("k");
+  }
+  assert.match(pages[0]!, /trace 4\/4 · assistant[\s\S]*Fixed\./);
+  assert.doesNotMatch(pages[0]!, /check it/);
+  assert.match(pages[1]!, /trace 3\/4 · think[\s\S]*check it/);
+  assert.doesNotMatch(pages[1]!, /Fixed/);
+  assert.match(pages[2]!, /trace 2\/4 · think[\s\S]*plan the fix/);
+  assert.match(pages[3]!, /trace 1\/4 · user[\s\S]*fix the bug/);
 
   shutdown();
 });

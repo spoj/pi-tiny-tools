@@ -7,12 +7,13 @@ import {
   InteractiveMode,
   SkillInvocationMessageComponent,
   ToolExecutionComponent,
+  UserMessageComponent,
   type ExtensionAPI,
   type SessionEntry,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, type Component } from "@earendil-works/pi-tui";
-import { renderTraceGroup, stripTerminalSequences, thinkingText, type TraceRow } from "./format.ts";
+import { messageText, renderTraceGroup, stripTerminalSequences, type TraceRow } from "./format.ts";
 import { showTraceInspector, type TraceItem } from "./trace-inspector.ts";
 
 let currentTheme: (() => Theme | undefined) | undefined;
@@ -52,7 +53,7 @@ function traceRow(component: unknown): TraceRow | undefined {
     };
   }
   if (component instanceof AssistantMessageComponent) {
-    return thinkingText(component) ? { name: "think", color: "thinkingText" } : undefined;
+    return messageText(component, "thinking") ? { name: "think", color: "thinkingText" } : undefined;
   }
   if (component instanceof BashExecutionComponent) {
     // Pi keeps no excludeFromContext flag, but `!!` commands draw their borders dim.
@@ -81,10 +82,24 @@ function isTraced(component: unknown): boolean {
   return traceRow(component) !== undefined;
 }
 
+// The inspector draws a message as its thinking and tells items apart by component, so a reply needs its own.
+const replies = new WeakMap<AssistantMessageComponent, Component>();
+
+function reply(message: AssistantMessageComponent): Component {
+  let view = replies.get(message);
+  if (!view) replies.set(message, (view = { render: (width) => message.render(width), invalidate() {} }));
+  return view;
+}
+
 function traceItems(): TraceItem[] {
-  return (chat?.children ?? []).flatMap((component) => {
+  return (chat?.children ?? []).flatMap((component): TraceItem[] => {
+    if (component instanceof UserMessageComponent) return [{ component, row: { name: "user", color: "text" } }];
     const row = traceRow(component);
-    return row ? [{ component, row }] : [];
+    const items: TraceItem[] = row ? [{ component, row }] : [];
+    if (component instanceof AssistantMessageComponent && messageText(component, "text")) {
+      items.push({ component: reply(component), row: { name: "assistant", color: "text" } });
+    }
+    return items;
   });
 }
 
@@ -125,7 +140,7 @@ function renderTraceGroups(children: Component[], width: number): string[] {
 
 export default function tinyTools(pi: ExtensionAPI): void {
   pi.registerCommand("trace", {
-    description: "Inspect minimized transcript items",
+    description: "Step through the transcript with minimized items expanded",
     handler: async (_args, ctx) => showTraceInspector(ctx, traceItems),
   });
   pi.registerShortcut("alt+t", {
@@ -156,7 +171,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
       patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
         const lines = original.call(this, width);
         if (lines.every(isBlank)) return [];
-        if (!thinkingText(this)) return lines;
+        if (!messageText(this, "thinking")) return lines;
         // Drop the hidden thinking label but keep the leading spacer, which carries Pi's prompt marker.
         return [lines[0]!, ...lines.slice(lines.findIndex((line) => !isBlank(line)))];
       }),

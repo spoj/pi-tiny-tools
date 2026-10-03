@@ -10,7 +10,7 @@ Thinking, tools, skills, custom messages and entries, `!` and `!!` shell command
 
 Names wrap onto indented lines when needed. Thinking keeps Pi's usual thinking color.
 
-Run `/trace` or press `Alt+T` to step through those items full screen. Each one is drawn the way Pi draws it expanded: commands with their output, edit diffs, highlighted file contents, extension messages, and thinking in its usual style. The inspector starts at the newest item and follows new items and streaming output. Pi's `Ctrl+T` and `Ctrl+O` toggles still work, but won't change how the transcript looks while this extension is active.
+Run `/trace` or press `Alt+T` to step through those items full screen, along with your messages and assistant replies for context. Each one is drawn the way Pi draws it expanded: commands with their output, edit diffs, highlighted file contents, extension messages, and thinking in its usual style. The inspector starts at the newest item and follows new items and streaming output. Pi's `Ctrl+T` and `Ctrl+O` toggles still work, but won't change how the transcript looks while this extension is active.
 
 - `j` / `k`: next / previous item
 - `PageDown` / `PageUp`, `Ctrl+D` / `Ctrl+U`, or the mouse wheel: scroll the current item
