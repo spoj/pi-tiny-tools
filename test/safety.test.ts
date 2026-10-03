@@ -110,7 +110,7 @@ test("internal traces stay compact while native expansion state changes", () => 
   const added: unknown[] = [];
   const interactive = {
     addMessageToChat: interactivePrototype.addMessageToChat,
-    chatContainer: { addChild: (child: unknown) => { added.push(child); } },
+    chatContainer: { children: added, addChild: (child: unknown) => { added.push(child); } },
     getMarkdownThemeWithSettings: () => undefined,
     outputPad: 0,
     session: { extensionRunner: { getMessageRenderer: () => undefined } },
@@ -128,7 +128,7 @@ test("internal traces stay compact while native expansion state changes", () => 
     addMessageToChat: interactivePrototype.addMessageToChat,
     renderSessionEntries: interactivePrototype.renderSessionEntries,
     renderSessionItems: interactivePrototype.renderSessionItems,
-    chatContainer: { addChild: (child: unknown) => { resumed.push(child); } },
+    chatContainer: { children: resumed, addChild: (child: unknown) => { resumed.push(child); } },
     getMarkdownThemeWithSettings: () => undefined,
     outputPad: 0,
     pendingTools: new Map(),

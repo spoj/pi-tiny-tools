@@ -18,6 +18,12 @@ export function messageText(component: unknown, type: "thinking" | "text"): stri
     .join("\n\n");
 }
 
+export function formatTime(time: number, now = new Date()): string {
+  const date = new Date(time);
+  const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return date.toDateString() === now.toDateString() ? clock : `${date.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} ${clock}`;
+}
+
 export function stripTerminalSequences(text: string): string {
   let output = "";
   let start = 0;

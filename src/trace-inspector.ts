@@ -1,8 +1,8 @@
 import { getMarkdownTheme, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Component, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { messageText, stripTerminalSequences, type TraceRow } from "./format.ts";
+import { formatTime, messageText, stripTerminalSequences, type TraceRow } from "./format.ts";
 
-export type TraceItem = { component: Component; row: TraceRow };
+export type TraceItem = { component: Component; row: TraceRow; time?: number; model?: string };
 
 type Expandable = { setExpanded?(expanded: boolean): void };
 
@@ -74,7 +74,10 @@ export class TraceInspector implements Component {
     this.scroll = Math.min(this.scroll, maxScroll);
     this.pinned = this.scroll === maxScroll;
 
-    const title = item ? `trace ${index + 1}/${items.length} · ${this.theme.fg(item.row.color, stripTerminalSequences(item.row.name))}` : "trace";
+    const about = [item?.time === undefined ? undefined : formatTime(item.time), item?.model].filter(Boolean).join(" · ");
+    const title = item
+      ? `trace ${index + 1}/${items.length} · ${this.theme.fg(item.row.color, stripTerminalSequences(item.row.name))}${about ? this.theme.fg("dim", ` · ${about}`) : ""}`
+      : "trace";
     const position = maxScroll > 0 ? `${this.scroll + 1}–${this.scroll + height} of ${content.length}` : "";
     return [
       this.rule(title, position, width),

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { renderTraceGroup, stripTerminalSequences } from "../src/format.ts";
+import { formatTime, renderTraceGroup, stripTerminalSequences } from "../src/format.ts";
 
 test("trace rows show only their names", () => {
   assert.deepEqual(renderTraceGroup([{ name: "read", color: "accent" }], 40), [" › read"]);
@@ -95,4 +95,10 @@ test("trace names retain their individual colors and use a dim marker", () => {
   assert.ok(colors.some(([color, text]) => color === "error" && text === "failed"));
   assert.ok(colors.some(([color, text]) => color === "thinkingText" && text === "think"));
   assert.ok(colors.some(([color, text]) => color === "customMessageLabel" && text === "extension"));
+});
+
+test("times show the clock for today and the date before that", () => {
+  const now = new Date(2026, 9, 4, 1, 30);
+  assert.equal(formatTime(new Date(2026, 9, 4, 0, 5).getTime(), now), "00:05");
+  assert.equal(formatTime(new Date(2026, 9, 3, 14, 31).getTime(), now), "3 Oct 14:31");
 });

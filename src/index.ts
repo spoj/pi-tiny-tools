@@ -91,13 +91,20 @@ function reply(message: AssistantMessageComponent): Component {
   return view;
 }
 
+// Most of Pi's components drop their message, so each keeps the time of the message Pi drew it for.
+const times = new WeakMap<Component, number>();
+
 function traceItems(): TraceItem[] {
+  let time: number | undefined;
   return (chat?.children ?? []).flatMap((component): TraceItem[] => {
-    if (component instanceof UserMessageComponent) return [{ component, row: { name: "user", color: "text" } }];
+    const message = (component as { lastMessage?: { model: string; timestamp: number } }).lastMessage;
+    // Tool calls, and anything else drawn without a message, take the time of the message before them.
+    time = times.get(component) ?? message?.timestamp ?? time;
+    if (component instanceof UserMessageComponent) return [{ component, row: { name: "user", color: "text" }, time }];
     const row = traceRow(component);
-    const items: TraceItem[] = row ? [{ component, row }] : [];
+    const items: TraceItem[] = row ? [{ component, row, time, model: message?.model }] : [];
     if (component instanceof AssistantMessageComponent && messageText(component, "text")) {
-      items.push({ component: reply(component), row: { name: "assistant", color: "text" } });
+      items.push({ component: reply(component), row: { name: "assistant", color: "text" }, time, model: message?.model });
     }
     return items;
   });
@@ -156,7 +163,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
     currentTheme = () => ctx.ui.theme;
     ctx.ui.setHiddenThinkingLabel("");
     const interactive = InteractiveMode.prototype as unknown as {
-      addMessageToChat(this: unknown, message: { role?: unknown; display?: unknown }, options?: unknown): void;
+      addMessageToChat(this: { chatContainer: Container }, message: { role?: unknown; display?: unknown; timestamp: number }, options?: unknown): void;
       renderSessionEntries(
         this: { chatContainer: Container; sessionManager: { getBranch(): SessionEntry[] } },
         entries: SessionEntry[],
@@ -206,8 +213,10 @@ export default function tinyTools(pi: ExtensionAPI): void {
           original.call(this, entries, options);
         }
       }),
-      patchMethod(interactive, "addMessageToChat", (original) => function (this: unknown, message, options): void {
+      patchMethod(interactive, "addMessageToChat", (original) => function (this: { chatContainer: Container }, message, options): void {
+        const added = this.chatContainer.children.length;
         original.call(this, message.role === "custom" ? { ...message, display: true } : message, options);
+        for (const child of this.chatContainer.children.slice(added)) times.set(child, message.timestamp);
       }),
       patchMethod(interactive, "addCacheMissNotice", silence),
       patchMethod(interactive, "addCacheWarmingUsage", silence),
