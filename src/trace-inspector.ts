@@ -1,5 +1,5 @@
 import { getMarkdownTheme, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
-import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Component, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { Markdown, matchesKey, Text, truncateToWidth, visibleWidth, type Component, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { formatTime, messageText, stripTerminalSequences, type TraceRow } from "./format.ts";
 
 export type TraceItem = { component: Component; row: TraceRow; time?: number; model?: string };
@@ -39,8 +39,12 @@ export class TraceInspector implements Component {
     }
     const items = this.items();
     const index = items.findIndex((item) => item.component === this.selected);
-    if (data === "j" || matchesKey(data, "down")) this.select(items, index + 1);
-    else if (data === "k" || matchesKey(data, "up")) this.select(items, index - 1);
+    if (data === "l" || matchesKey(data, "right")) this.select(items, index + 1);
+    else if (data === "h" || matchesKey(data, "left")) this.select(items, index - 1);
+    else if (data === "L") this.select(items, items.length - 1);
+    else if (data === "H") this.select(items, 0);
+    else if (data === "j" || matchesKey(data, "down")) this.scrollBy(1);
+    else if (data === "k" || matchesKey(data, "up")) this.scrollBy(-1);
     else if (matchesKey(data, "pageDown") || matchesKey(data, "ctrl+d")) this.scrollBy(this.bodyHeight());
     else if (matchesKey(data, "pageUp") || matchesKey(data, "ctrl+u")) this.scrollBy(-this.bodyHeight());
     else if (data === "g" || matchesKey(data, "home")) this.scrollBy(-this.scroll);
@@ -61,28 +65,26 @@ export class TraceInspector implements Component {
       index = items.length - 1;
       this.select(items, index);
     }
-    const item = items[index];
-    if (item && item.component !== this.expanded) {
+    const item = items[index]!;
+    if (item.component !== this.expanded) {
       (item.component as Expandable).setExpanded?.(true);
       this.expanded = item.component;
     }
 
-    const content = item ? this.renderItem(item.component, width) : [];
+    const content = this.renderItem(item.component, width);
     const height = this.bodyHeight();
     const maxScroll = Math.max(0, content.length - height);
     if (this.pinned) this.scroll = maxScroll;
     this.scroll = Math.min(this.scroll, maxScroll);
     this.pinned = this.scroll === maxScroll;
 
-    const about = [item?.time === undefined ? undefined : formatTime(item.time), item?.model].filter(Boolean).join(" · ");
-    const title = item
-      ? `trace ${index + 1}/${items.length} · ${this.theme.fg(item.row.color, stripTerminalSequences(item.row.name))}${about ? this.theme.fg("dim", ` · ${about}`) : ""}`
-      : "trace";
+    const about = [item.time === undefined ? undefined : formatTime(item.time), item.model].filter(Boolean).join(" · ");
+    const title = `trace ${index + 1}/${items.length} · ${this.theme.fg(item.row.color, stripTerminalSequences(item.row.name))}${about ? this.theme.fg("dim", ` · ${about}`) : ""}`;
     const position = maxScroll > 0 ? `${this.scroll + 1}–${this.scroll + height} of ${content.length}` : "";
     return [
       this.rule(title, position, width),
       ...Array.from({ length: height }, (_, row) => fit(content[this.scroll + row] ?? "", width)),
-      this.rule(this.theme.fg("dim", "j/k item · PgUp/PgDn scroll · g/G top/bottom · Esc close"), "", width),
+      this.rule(this.theme.fg("dim", "←/→ item · H/L first/last · ↑/↓ scroll · g/G top/bottom · Esc close"), "", width),
     ];
   }
 
@@ -127,11 +129,8 @@ export class TraceInspector implements Component {
 
 export async function showTraceInspector(ctx: ExtensionContext, items: () => TraceItem[]): Promise<void> {
   if (ctx.mode !== "tui") return;
-  if (items().length === 0) {
-    ctx.ui.notify("No traceable items in the current branch", "info");
-    return;
-  }
-  await ctx.ui.custom<void>((tui, theme, _keybindings, done) => new TraceInspector(items, theme, tui, done), {
+  const system: TraceItem = { component: new Text(ctx.getSystemPrompt(), 1, 1), row: { name: "system prompt", color: "text" } };
+  await ctx.ui.custom<void>((tui, theme, _keybindings, done) => new TraceInspector(() => [system, ...items()], theme, tui, done), {
     overlay: true,
     overlayOptions: { width: "100%", maxHeight: "100%" },
   });

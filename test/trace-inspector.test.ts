@@ -44,23 +44,33 @@ test("inspector shows the newest item expanded, full screen, within its width", 
   assert.ok(lines.every((line) => visibleWidth(line) === 40));
   assert.match(lines[0]!, /^─ trace 2\/2 · bash ─+$/);
   assert.deepEqual(lines.slice(1, 4).map((line) => line.trimEnd()), ["line 0", "line 1", "line 2"]);
-  assert.match(lines[7]!, /^─ j\/k item · PgUp\/PgDn scroll · g\/G top\//);
-  assert.match(inspector.render(80)[7]!, /^─ j\/k item · PgUp\/PgDn scroll · g\/G top\/bottom · Esc close ─+$/);
+  assert.match(lines[7]!, /^─ ←\/→ item · H\/L first\/last · /);
+  assert.match(inspector.render(80)[7]!, /^─ ←\/→ item · H\/L first\/last · ↑\/↓ scroll · g\/G top\/bottom · Esc close ─+$/);
   assert.equal(items[1]!.component.expanded, true);
   assert.equal(items[0]!.component.expanded, false);
 });
 
-test("inspector navigates items and scrolls long content", () => {
+test("inspector steps through items with ←/→ and scrolls the current item with ↑/↓", () => {
   const tui = fakeTui(6);
-  const items = [tool("read", numbered(10)), tool("bash", ["done"])];
+  const items = [tool("read", numbered(10)), tool("edit", ["patched"]), tool("bash", ["done"])];
   const inspector = new TraceInspector(() => items, theme, tui, () => {});
   inspector.render(40);
 
-  inspector.handleInput("k");
+  inspector.handleInput("\x1b[D");
+  assert.match(inspector.render(40)[0]!, /trace 2\/3 · edit/);
+  inspector.handleInput("h");
   let lines = inspector.render(40);
-  assert.match(lines[0]!, /trace 1\/2 · read .* 1–4 of 10 ─$/);
+  assert.match(lines[0]!, /trace 1\/3 · read .* 1–4 of 10 ─$/);
   assert.equal(items[0]!.component.expanded, true);
 
+  inspector.handleInput("\x1b[B");
+  assert.match(inspector.render(40)[1]!, /^line 1/);
+  inspector.handleInput("j");
+  assert.match(inspector.render(40)[1]!, /^line 2/);
+  inspector.handleInput("\x1b[A");
+  assert.match(inspector.render(40)[1]!, /^line 1/);
+  inspector.handleInput("k");
+  assert.match(inspector.render(40)[1]!, /^line 0/);
   inspector.handleInput("\x1b[6~");
   assert.match(inspector.render(40)[1]!, /^line 4/);
   inspector.handleInput("G");
@@ -72,11 +82,17 @@ test("inspector navigates items and scrolls long content", () => {
   inspector.handleInput("g");
   assert.match(inspector.render(40)[1]!, /^line 0/);
 
-  inspector.handleInput("k");
-  assert.match(inspector.render(40)[0]!, /trace 1\/2/);
-  inspector.handleInput("j");
-  assert.match(inspector.render(40)[0]!, /trace 2\/2 · bash/);
-  assert.equal(tui.renders, 6);
+  inspector.handleInput("h");
+  assert.match(inspector.render(40)[0]!, /trace 1\/3/);
+  inspector.handleInput("\x1b[C");
+  assert.match(inspector.render(40)[0]!, /trace 2\/3 · edit/);
+  inspector.handleInput("l");
+  assert.match(inspector.render(40)[0]!, /trace 3\/3 · bash/);
+  inspector.handleInput("H");
+  assert.match(inspector.render(40)[0]!, /trace 1\/3 · read/);
+  inspector.handleInput("L");
+  assert.match(inspector.render(40)[0]!, /trace 3\/3 · bash/);
+  assert.equal(tui.renders, 14);
 });
 
 test("inspector follows new items and tails growing output", () => {
@@ -95,7 +111,7 @@ test("inspector follows new items and tails growing output", () => {
   items[1]!.component.lines = numbered(12);
   assert.match(inspector.render(40)[0]!, /3–5 of 12/);
 
-  inspector.handleInput("k");
+  inspector.handleInput("\x1b[D");
   items.push(tool("read", ["new"]));
   assert.match(inspector.render(40)[0]!, /trace 1\/3/);
 });
@@ -126,7 +142,7 @@ test("inspector closes on Escape, Ctrl+C, and Alt+T", () => {
   }
 });
 
-test("/trace steps through the rendered transcript, including your messages and replies", async () => {
+test("/trace steps from the system prompt through the rendered transcript, including your messages and replies", async () => {
   const commands = new Map<string, (args: string, ctx: ExtensionContext) => Promise<void>>();
   let shutdown!: () => void;
   tinyTools({
@@ -140,12 +156,11 @@ test("/trace steps through the rendered transcript, including your messages and 
     registerShortcut() {},
   } as unknown as ExtensionAPI);
 
-  const notifications: string[] = [];
   let inspector: Component | undefined;
   const ctx = {
     mode: "tui",
+    getSystemPrompt: () => "You are a test agent.",
     ui: {
-      notify: (message: string) => notifications.push(message),
       async custom(factory: (tui: TUI, theme: Theme, keybindings: unknown, done: () => void) => Component) {
         inspector = factory(fakeTui(6), theme, undefined, () => {});
       },
@@ -153,7 +168,7 @@ test("/trace steps through the rendered transcript, including your messages and 
   } as unknown as ExtensionContext;
 
   await commands.get("trace")!("", ctx);
-  assert.deepEqual(notifications, ["No traceable items in the current branch"]);
+  assert.match(inspector!.render(60).join("\n"), /^─ trace 1\/1 · system prompt ─[\s\S]*You are a test agent\./);
 
   const chatContainer = new Container();
   const interactive = InteractiveMode.prototype as unknown as {
@@ -190,19 +205,20 @@ test("/trace steps through the rendered transcript, including your messages and 
 
   await commands.get("trace")!("", ctx);
   const pages: string[] = [];
-  for (let page = 0; page < 5; page++) {
+  for (let page = 0; page < 6; page++) {
     const lines = inspector!.render(60);
     assert.ok(lines.every((line) => visibleWidth(line) === 60));
     pages.push(lines.join("\n"));
-    inspector!.handleInput!("k");
+    inspector!.handleInput!("\x1b[D");
   }
-  assert.match(pages[0]!, /^─ trace 5\/5 · assistant · 09:08 · claude-test ─[\s\S]*Fixed\./);
+  assert.match(pages[0]!, /^─ trace 6\/6 · assistant · 09:08 · claude-test ─[\s\S]*Fixed\./);
   assert.doesNotMatch(pages[0]!, /check it/);
-  assert.match(pages[1]!, /^─ trace 4\/5 · think · 09:08 · claude-test ─[\s\S]*check it/);
+  assert.match(pages[1]!, /^─ trace 5\/6 · think · 09:08 · claude-test ─[\s\S]*check it/);
   assert.doesNotMatch(pages[1]!, /Fixed/);
-  assert.match(pages[2]!, /^─ trace 3\/5 · bash · 09:06 ─[\s\S]*ran the tests/);
-  assert.match(pages[3]!, /^─ trace 2\/5 · think · 09:06 · claude-test ─[\s\S]*plan the fix/);
-  assert.match(pages[4]!, /^─ trace 1\/5 · user · 09:05 ─[\s\S]*fix the bug/);
+  assert.match(pages[2]!, /^─ trace 4\/6 · bash · 09:06 ─[\s\S]*ran the tests/);
+  assert.match(pages[3]!, /^─ trace 3\/6 · think · 09:06 · claude-test ─[\s\S]*plan the fix/);
+  assert.match(pages[4]!, /^─ trace 2\/6 · user · 09:05 ─[\s\S]*fix the bug/);
+  assert.match(pages[5]!, /^─ trace 1\/6 · system prompt ─[\s\S]*You are a test agent\./);
 
   shutdown();
 });
