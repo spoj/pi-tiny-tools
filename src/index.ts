@@ -16,7 +16,8 @@ import { Container, Spacer, type Component } from "@earendil-works/pi-tui";
 import { messageText, renderTraceGroup, stripTerminalSequences, type TraceRow } from "./format.ts";
 import { showTraceInspector, type TraceItem } from "./trace-inspector.ts";
 
-let currentTheme: (() => Theme | undefined) | undefined;
+// Keep the theme, not the ctx: Pi's theme follows theme switches, while a ctx goes stale when its session ends.
+let currentTheme: Theme | undefined;
 let chat: Container | undefined;
 
 function patchMethod<T extends object, K extends keyof T>(
@@ -58,10 +59,9 @@ function traceRow(component: unknown): TraceRow | undefined {
   if (component instanceof BashExecutionComponent) {
     // Pi keeps no excludeFromContext flag, but `!!` commands draw their borders dim.
     const border = component.children[1] as unknown as { color: (text: string) => string };
-    const theme = currentTheme?.();
     const status = (component as unknown as { status: string }).status;
     return {
-      name: theme && border.color("─") === theme.fg("dim", "─") ? "!!" : "!",
+      name: currentTheme && border.color("─") === currentTheme.fg("dim", "─") ? "!!" : "!",
       color: status === "running" ? "accent" : status === "complete" ? "success" : "error",
     };
   }
@@ -118,7 +118,7 @@ function renderTraceGroups(children: Component[], width: number): string[] {
   const flushRows = (): void => {
     if (rows.length === 0) return;
     if (output.length > 0) output.push("");
-    output.push(...renderTraceGroup(rows, width, currentTheme?.()));
+    output.push(...renderTraceGroup(rows, width, currentTheme));
     rows.length = 0;
   };
 
@@ -160,7 +160,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
   // Workflow subagents load this extension in the same process; only the TUI session may patch or theme.
   pi.on("session_start", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
-    currentTheme = () => ctx.ui.theme;
+    currentTheme = ctx.ui.theme;
     ctx.ui.setHiddenThinkingLabel("");
     const interactive = InteractiveMode.prototype as unknown as {
       addMessageToChat(this: { chatContainer: Container }, message: { role?: unknown; display?: unknown; timestamp: number }, options?: unknown): void;
