@@ -24,7 +24,7 @@ The inspector shows what Pi kept. If a tool truncated its output, you'll see the
 ## Install
 
 ```bash
-pi install git:github.com/spoj/pi-tiny-tools
+pi install git:github.com/spoj/pi-tiny-tools@v0.1.0
 ```
 
 Run a local checkout:
