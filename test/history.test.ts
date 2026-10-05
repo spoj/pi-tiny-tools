@@ -136,3 +136,63 @@ test("a compaction appended at a turn boundary keeps the history once", async (t
   await prototype.handleEvent.call(interactive, { type: "entry_appended", entry: chained });
   assert.deepEqual(texts(), ["old request", "recent request", "boundary summary", "after summary"]);
 });
+
+test("/reload redraws the transcript once the reloaded extension has patched Pi", (t) => {
+  const prototype = InteractiveMode.prototype as unknown as {
+    renderSessionEntries(entries: SessionEntry[], options?: unknown): void;
+    renderInitialMessages(): void;
+    rebuildChatFromMessages(): void;
+  };
+  const load = (reason: string) => {
+    let shutdown!: () => void;
+    tinyTools({
+      on(name: string, handler: (event?: unknown, ctx?: unknown) => void) {
+        if (name === "session_start") handler({ type: "session_start", reason }, { mode: "tui", ui: { setHiddenThinkingLabel() {} } });
+        if (name === "session_shutdown") shutdown = handler;
+      },
+      registerCommand() {},
+      registerShortcut() {},
+    } as unknown as ExtensionAPI);
+    return shutdown;
+  };
+
+  const sessionManager = SessionManager.inMemory();
+  sessionManager.appendMessage({ role: "user", content: "old request", timestamp: 1 });
+  const kept = sessionManager.appendMessage({ role: "user", content: "recent request", timestamp: 2 });
+  sessionManager.appendCompaction("summary", kept, 1000);
+  const items: unknown[] = [];
+  const interactive = {
+    isInitialized: true,
+    sessionManager,
+    // Pi calls whichever renderSessionEntries is patched in at the time.
+    renderSessionEntries(entries: SessionEntry[], options?: unknown) { prototype.renderSessionEntries.call(this, entries, options); },
+    rebuildChatFromMessages() { prototype.rebuildChatFromMessages.call(this); },
+    renderSessionItems(rendered: unknown[]) { items.push(...rendered); },
+    addMessageToChat(message: unknown) { items.push(message); },
+    chatContainer: { clear() { items.length = 0; }, children: items },
+    settingsManager: { getShowTerminalProgress: () => false },
+    clearStatusIndicator() {},
+    footer: { invalidate() {} },
+    ui: { requestRender() {} },
+    flushCompactionQueue() {},
+    renderProjectTrustWarningIfNeeded() {},
+    showStatus() {},
+  };
+  const texts = () => items.map((item) => {
+    const message = item as { content?: string; summary?: string };
+    return message.content ?? message.summary;
+  });
+  const full = ["old request", "recent request", "summary"];
+
+  let shutdown = load("startup");
+  t.after(() => shutdown());
+  prototype.renderInitialMessages.call(interactive);
+  assert.deepEqual(texts(), full);
+
+  // Pi's /reload: the old extension shuts down, Pi redraws the transcript without its patches, then the new one starts.
+  shutdown();
+  prototype.rebuildChatFromMessages.call(interactive);
+  assert.notDeepEqual(texts(), full);
+  shutdown = load("reload");
+  assert.deepEqual(texts(), full);
+});

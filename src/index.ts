@@ -18,7 +18,14 @@ import { showTraceInspector, type TraceItem } from "./trace-inspector.ts";
 
 // Keep the theme, not the ctx: Pi's theme follows theme switches, while a ctx goes stale when its session ends.
 let currentTheme: Theme | undefined;
-let chat: Container | undefined;
+
+type Interactive = {
+  chatContainer: Container;
+  sessionManager: { getBranch(): SessionEntry[] };
+  rebuildChatFromMessages(): void;
+};
+// Pi's interactive mode outlives this module: /reload imports a fresh copy after Pi has redrawn the transcript.
+const shared = ((globalThis as { [key: symbol]: unknown })[Symbol.for("pi-tiny-tools")] ??= {}) as { interactive?: Interactive };
 
 function patchMethod<T extends object, K extends keyof T>(
   target: T,
@@ -96,7 +103,7 @@ const times = new WeakMap<Component, number>();
 
 function traceItems(): TraceItem[] {
   let time: number | undefined;
-  return (chat?.children ?? []).flatMap((component): TraceItem[] => {
+  return (shared.interactive?.chatContainer.children ?? []).flatMap((component): TraceItem[] => {
     const message = (component as { lastMessage?: { model: string; timestamp: number } }).lastMessage;
     // Tool calls, and anything else drawn without a message, take the time of the message before them.
     time = times.get(component) ?? message?.timestamp ?? time;
@@ -158,17 +165,13 @@ export default function tinyTools(pi: ExtensionAPI): void {
   let restorePatches: (() => void)[] = [];
 
   // Workflow subagents load this extension in the same process; only the TUI session may patch or theme.
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", (event, ctx) => {
     if (ctx.mode !== "tui") return;
     currentTheme = ctx.ui.theme;
     ctx.ui.setHiddenThinkingLabel("");
     const interactive = InteractiveMode.prototype as unknown as {
       addMessageToChat(this: { chatContainer: Container }, message: { role?: unknown; display?: unknown; timestamp: number }, options?: unknown): void;
-      renderSessionEntries(
-        this: { chatContainer: Container; sessionManager: { getBranch(): SessionEntry[] } },
-        entries: SessionEntry[],
-        options?: unknown,
-      ): void;
+      renderSessionEntries(this: Interactive, entries: SessionEntry[], options?: unknown): void;
       addCacheMissNotice(): void;
       addCacheWarmingUsage(): void;
       addCompactionCostNotice(): void;
@@ -198,7 +201,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
         return this.children.some(isTraced) ? undefined : original.call(this, event);
       }),
       patchMethod(interactive, "renderSessionEntries", (original) => function (entries, options): void {
-        chat = this.chatContainer;
+        shared.interactive = this;
         const branch = this.sessionManager.getBranch();
         const compaction = branch.filter((entry) => entry.type === "compaction").at(-1);
         if (!compaction || entries.some((entry) => entry.id === compaction.id)) {
@@ -222,6 +225,8 @@ export default function tinyTools(pi: ExtensionAPI): void {
       patchMethod(interactive, "addCacheWarmingUsage", silence),
       patchMethod(interactive, "addCompactionCostNotice", silence),
     ];
+    // On /reload Pi redraws the transcript before this runs, without these patches.
+    if (event.reason === "reload") shared.interactive?.rebuildChatFromMessages();
   });
 
   pi.on("session_shutdown", () => {
@@ -229,6 +234,5 @@ export default function tinyTools(pi: ExtensionAPI): void {
     for (const restore of restorePatches.reverse()) restore();
     restorePatches = [];
     currentTheme = undefined;
-    chat = undefined;
   });
 }
