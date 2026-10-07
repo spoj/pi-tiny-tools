@@ -90,12 +90,10 @@ function trimWrappedSeparator(line: string): string {
 }
 
 export function renderTraceGroup(rows: TraceRow[], width: number, theme?: Theme): string[] {
-  if (rows.length === 0) return [];
   const names = rows.map((row) => {
     const name = stripTerminalSequences(row.name);
     return theme?.fg(row.color, name) ?? name;
   }).join(" ");
-  if (width <= PREFIX_WIDTH) return [truncateToWidth(`${prefix(theme)}${names}`, Math.max(1, width))];
   return wrapTextWithAnsi(names, width - PREFIX_WIDTH).map((line, index) =>
     truncateToWidth(
       `${index === 0 ? prefix(theme) : " ".repeat(PREFIX_WIDTH)}${trimWrappedSeparator(line)}`,

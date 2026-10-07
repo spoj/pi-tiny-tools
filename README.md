@@ -6,7 +6,7 @@ A small [Pi](https://github.com/earendil-works/pi-mono) extension that shows too
 
 Your messages, assistant replies, and assistant errors stay visible as usual. Scrollback keeps the full current branch, including messages from before compaction, even after reloading the session.
 
-Thinking, tools, skills, custom messages and entries, `!` and `!!` shell commands, compactions, and branch summaries shrink to names. Their full content is still available in `/trace`. Model changes, thinking-level changes, and billing notices are hidden.
+Thinking, tools, skills, custom messages and entries, `!` and `!!` shell commands, compactions, and branch summaries shrink to names. Their full content is still available in `/trace`. Billing notices are hidden.
 
 Names wrap onto indented lines when needed. Thinking keeps Pi's usual thinking color.
 

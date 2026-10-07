@@ -47,16 +47,12 @@ function isBlank(line: string): boolean {
   return stripTerminalSequences(line).trim() === "";
 }
 
-function named(name: unknown, fallback: string): string {
-  return typeof name === "string" && name ? name : fallback;
-}
-
 function traceRow(component: unknown): TraceRow | undefined {
   if (component instanceof ToolExecutionComponent) {
-    const tool = component as unknown as { hideComponent?: unknown; toolName?: unknown; result?: { isError?: unknown }; isPartial?: unknown };
+    const tool = component as unknown as { hideComponent?: unknown; toolName: string; result?: { isError?: unknown }; isPartial?: unknown };
     if (tool.hideComponent === true) return undefined;
     return {
-      name: named(tool.toolName, "tool"),
+      name: tool.toolName,
       color: tool.result?.isError ? "error" : tool.result && tool.isPartial !== true ? "success" : "accent",
     };
   }
@@ -73,20 +69,16 @@ function traceRow(component: unknown): TraceRow | undefined {
     };
   }
   if (component instanceof CustomMessageComponent) {
-    const message = (component as unknown as { message?: { customType?: unknown } }).message;
-    return { name: named(message?.customType, "extension"), color: "customMessageLabel" };
+    const message = (component as unknown as { message: { customType: string } }).message;
+    return { name: message.customType, color: "customMessageLabel" };
   }
   if (component instanceof BranchSummaryMessageComponent) return { name: "branch summary", color: "customMessageLabel" };
   if (component instanceof CompactionSummaryMessageComponent) return { name: "compaction", color: "customMessageLabel" };
   if (component instanceof SkillInvocationMessageComponent) {
     return { name: (component as unknown as { skillBlock: { name: string } }).skillBlock.name, color: "customMessageLabel" };
   }
-  const entry = (component as { entry?: { type?: unknown; customType?: unknown } } | undefined)?.entry;
-  return entry?.type === "custom" ? { name: named(entry.customType, "extension"), color: "customMessageLabel" } : undefined;
-}
-
-function isTraced(component: unknown): boolean {
-  return traceRow(component) !== undefined;
+  const entry = (component as { entry?: { type: string; customType: string } }).entry;
+  return entry?.type === "custom" ? { name: entry.customType, color: "customMessageLabel" } : undefined;
 }
 
 // The inspector draws a message as its thinking and tells items apart by component, so a reply needs its own.
@@ -194,11 +186,11 @@ export default function tinyTools(pi: ExtensionAPI): void {
         original.call(this, message, isStreaming);
       }),
       patchMethod(Container.prototype, "render", (original) => function (this: Container, width: number) {
-        return this.children.some(isTraced) ? renderTraceGroups(this.children, width) : original.call(this, width);
+        return this.children.some(traceRow) ? renderTraceGroups(this.children, width) : original.call(this, width);
       }),
       // Pi routes clicks by each child's native height, and a click on a reply would reveal its thinking.
       patchMethod(Container.prototype, "handleMouse", (original) => function (this: Container, event) {
-        return this.children.some(isTraced) ? undefined : original.call(this, event);
+        return this.children.some(traceRow) ? undefined : original.call(this, event);
       }),
       patchMethod(interactive, "renderSessionEntries", (original) => function (entries, options): void {
         shared.interactive = this;
@@ -230,9 +222,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", () => {
-    if (restorePatches.length === 0) return;
     for (const restore of restorePatches.reverse()) restore();
     restorePatches = [];
-    currentTheme = undefined;
   });
 }

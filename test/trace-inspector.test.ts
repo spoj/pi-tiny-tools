@@ -5,7 +5,6 @@ import {
   initTheme,
   InteractiveMode,
   ToolExecutionComponent,
-  UserMessageComponent,
   type ExtensionAPI,
   type ExtensionContext,
   type Theme,
