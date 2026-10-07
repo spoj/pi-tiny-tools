@@ -158,7 +158,7 @@ export default function tinyTools(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => showTraceInspector(ctx, traceItems),
   });
   pi.registerShortcut("alt+t", {
-    description: "Toggle the internal trace inspector",
+    description: "Toggle the trace inspector",
     handler: (ctx) => showTraceInspector(ctx, traceItems),
   });
 
