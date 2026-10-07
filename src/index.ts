@@ -167,8 +167,12 @@ export default function tinyTools(pi: ExtensionAPI): void {
       addCacheMissNotice(): void;
       addCacheWarmingUsage(): void;
       addCompactionCostNotice(): void;
+      toggleToolOutputExpansion(): void;
+      toggleThinkingBlockVisibility(): void;
     };
     const silence = () => () => {};
+    // Pi's expand toggles change nothing here, and Ctrl+T would also save a setting, so both open the inspector.
+    const inspect = () => () => void showTraceInspector(ctx, traceItems);
     restorePatches = [
       patchMethod(AssistantMessageComponent.prototype, "render", (original) => function (this: AssistantMessageComponent, width: number) {
         const lines = original.call(this, width);
@@ -216,6 +220,8 @@ export default function tinyTools(pi: ExtensionAPI): void {
       patchMethod(interactive, "addCacheMissNotice", silence),
       patchMethod(interactive, "addCacheWarmingUsage", silence),
       patchMethod(interactive, "addCompactionCostNotice", silence),
+      patchMethod(interactive, "toggleToolOutputExpansion", inspect),
+      patchMethod(interactive, "toggleThinkingBlockVisibility", inspect),
     ];
     // On /reload Pi redraws the transcript before this runs, without these patches.
     if (event.reason === "reload") shared.interactive?.rebuildChatFromMessages();

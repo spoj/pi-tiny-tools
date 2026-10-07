@@ -33,7 +33,7 @@ export class TraceInspector implements Component {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c") || matchesKey(data, "alt+t")) {
+    if ((["escape", "ctrl+c", "alt+t", "ctrl+o", "ctrl+t"] as const).some((key) => matchesKey(data, key))) {
       this.done();
       return;
     }

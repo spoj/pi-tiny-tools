@@ -10,14 +10,14 @@ Thinking, tools, skills, custom messages and entries, `!` and `!!` shell command
 
 Names wrap onto indented lines when needed. Thinking keeps Pi's usual thinking color.
 
-Run `/trace` or press `Alt+T` to step through those items full screen, along with your messages and assistant replies for context. The first item is the current system prompt. Each one is drawn the way Pi draws it expanded: commands with their output, edit diffs, highlighted file contents, extension messages, and thinking in its usual style. Each title shows when the item happened, with the date if it wasn't today, and the model behind thinking and replies. Tool calls take the time of the reply that made them. The inspector starts at the newest item and follows new items and streaming output. Pi's `Ctrl+T` and `Ctrl+O` toggles still work, but won't change how the transcript looks while this extension is active.
+Run `/trace` or press `Alt+T`, `Ctrl+O` or `Ctrl+T` to step through those items full screen, along with your messages and assistant replies for context. The first item is the current system prompt. Each one is drawn the way Pi draws it expanded: commands with their output, edit diffs, highlighted file contents, extension messages, and thinking in its usual style. Each title shows when the item happened, with the date if it wasn't today, and the model behind thinking and replies. Tool calls take the time of the reply that made them. The inspector starts at the newest item and follows new items and streaming output. `Ctrl+O` and `Ctrl+T` replace Pi's expand toggles, which would change nothing here.
 
 - `←` / `→`, or `h` / `l`: previous / next item
 - `H` / `L`: first / last item
 - `↑` / `↓`, or `k` / `j`: scroll the current item by a line
 - `PageUp` / `PageDown`, `Ctrl+U` / `Ctrl+D`, or the mouse wheel: scroll the current item further
 - `g` / `G`: top / bottom of the current item
-- `Esc` / `Alt+T`: close
+- `Esc`, `Alt+T`, `Ctrl+O` or `Ctrl+T`: close
 
 The inspector shows what Pi kept. If a tool truncated its output, you'll see the stored result and its truncation notice, not the discarded output.
 
