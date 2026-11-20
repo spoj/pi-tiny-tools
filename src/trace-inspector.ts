@@ -105,7 +105,7 @@ export class TraceInspector implements Component {
     this.pinned = false;
   }
 
-  private renderItem(component: Component, width: number): string[] {
+  private renderItem(component: Component, width: number): readonly string[] {
     const thinking = messageText(component, "thinking");
     if (!thinking) return component.render(width);
     if (thinking !== this.thinkingSource) {
